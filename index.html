@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matchday — Football Stats Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+ <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+<header>
+  <div class="brand">
+    <h1>MATCHDAY</h1>
+  </div>
+  <div class="tag" style="text-align:center; margin-top:2px;">squad stats tracker</div>
+  <div id="scoreboard" class="scoreboard empty">Log your first match to see it here</div>
+  <div class="admin-bar">
+    <button class="admin-btn" id="admin-toggle-btn">Admin unlock</button>
+  </div>
+</header>
+
+<nav>
+  <button data-panel="squad" class="active">Squad</button>
+  <button data-panel="newmatch">New Match</button>
+  <button data-panel="history">History</button>
+  <button data-panel="leaderboard">Leaderboard</button>
+  <button data-panel="playerstats">Player Stats</button>
+</nav>
+
+<main>
+  <p class="shared-note">Everyone with this link sees the same data — it's shared across your squad.</p>
+
+  <!-- SQUAD PANEL -->
+  <section class="panel active" id="panel-squad">
+    <h2 class="section-title">Squad</h2>
+    <div class="card">
+      <label for="new-player-name">Add a player (name will be saved in CAPS)</label>
+      <div class="row2">
+        <div><input type="text" id="new-player-name" placeholder="PLAYER NAME" style="text-transform:uppercase;"></div>
+      </div>
+      <button class="primary" id="add-player-btn">Add player</button>
+    </div>
+    <div id="squad-list" class="chip-list"></div>
+
+    <div class="card settings-card" id="admin-settings" style="display:none;">
+      <label style="color:var(--pitch-dark);">Admin settings</label>
+      <label for="admin-pass-input">Admin passcode (needed to delete matches/players)</label>
+      <input type="text" id="admin-pass-input">
+      <button class="secondary" id="save-passcodes-btn" type="button">Save passcode</button>
+    </div>
+  </section>
+
+  <!-- NEW MATCH PANEL -->
+  <section class="panel" id="panel-newmatch">
+    <h2 class="section-title">Log a match</h2>
+    <div class="card">
+      <label for="match-date">Date</label>
+      <input type="date" id="match-date">
+
+      <div class="row2">
+        <div>
+          <label for="teamA-name">Team A name</label>
+          <input type="text" id="teamA-name" placeholder="e.g. Shirts" value="Team A">
+        </div>
+        <div>
+          <label for="teamB-name">Team B name</label>
+          <input type="text" id="teamB-name" placeholder="e.g. Skins" value="Team B">
+        </div>
+      </div>
+
+      <label>Team A players</label>
+      <div class="player-pick" id="pickA"></div>
+
+      <label>Team B players</label>
+      <div class="player-pick" id="pickB"></div>
+
+      <div class="row2">
+        <div>
+          <label for="scoreA">Final score — Team A</label>
+          <input type="number" id="scoreA" min="0" value="0">
+        </div>
+        <div>
+          <label for="scoreB">Final score — Team B</label>
+          <input type="number" id="scoreB" min="0" value="0">
+        </div>
+      </div>
+
+      <label>Goals &amp; assists</label>
+      <p style="font-size:12px; color:rgba(22,24,28,0.5); margin:-8px 0 10px; font-family:'Space Mono',monospace;">Pick players above, then enter each player's totals for this match.</p>
+      <div id="event-rows"></div>
+
+      <button class="primary" id="save-match-btn">Save match</button>
+    </div>
+  </section>
+
+  <!-- HISTORY PANEL -->
+  <section class="panel" id="panel-history">
+    <h2 class="section-title">Match history</h2>
+    <div id="history-list"></div>
+  </section>
+
+  <!-- LEADERBOARD PANEL -->
+  <section class="panel" id="panel-leaderboard">
+    <h2 class="section-title">Leaderboard</h2>
+    <div id="leaderboard-content"></div>
+  </section>
+
+  <!-- PLAYER STATS PANEL -->
+  <section class="panel" id="panel-playerstats">
+    <h2 class="section-title">Player Stats</h2>
+    <div id="playerstats-content"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="app-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-message" id="modal-message"></div>
+    <input type="text" id="modal-input" style="display:none;">
+    <div class="modal-actions">
+      <button class="secondary" id="modal-cancel">Cancel</button>
+      <button class="primary" id="modal-confirm">OK</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /#app -->
+
+<input type="file" id="photo-upload-input" accept="image/*" style="display:none;">
+<script src="script.js"></script>
+</body>
+</html>
