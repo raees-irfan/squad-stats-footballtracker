@@ -148,8 +148,19 @@ function updateAdminUI(){
   if(isAdmin){
     document.getElementById('admin-pass-input').value = auth.adminPass;
   }
+  updateNavVisibility();
   renderHistory();
   renderSquad();
+}
+function updateNavVisibility(){
+  const newMatchBtn = document.querySelector('nav button[data-panel="newmatch"]');
+  newMatchBtn.style.display = isAdmin ? '' : 'none';
+  if(!isAdmin){
+    if(editingMatchId){ exitEditMode(); resetMatchForm(); }
+    if(newMatchBtn.classList.contains('active')){
+      switchPanel('squad');
+    }
+  }
 }
 document.getElementById('save-passcodes-btn').addEventListener('click', async () => {
   const ap = document.getElementById('admin-pass-input').value.trim();
@@ -419,6 +430,71 @@ function renderGoalAssistInputs(){
   document.getElementById(id).addEventListener('input', renderGoalAssistInputs);
 });
 
+function resetMatchForm(){
+  document.getElementById('teamA-name').value = 'Team A';
+  document.getElementById('teamB-name').value = 'Team B';
+  document.getElementById('scoreA').value = 0;
+  document.getElementById('scoreB').value = 0;
+  document.getElementById('match-date').valueAsDate = new Date();
+  document.querySelectorAll('.pick-cb').forEach(cb => { cb.checked = false; cb.closest('label').classList.remove('picked'); });
+  syncPickAvailability();
+  renderGoalAssistInputs();
+}
+
+/* ---------- Editing an existing match (admin only) ---------- */
+let editingMatchId = null;
+
+function enterEditMode(match){
+  if(!isAdmin) return;
+  editingMatchId = match.id;
+
+  document.getElementById('match-date').value = match.date;
+  document.getElementById('teamA-name').value = match.teamA.name;
+  document.getElementById('teamB-name').value = match.teamB.name;
+  document.getElementById('scoreA').value = match.scoreA;
+  document.getElementById('scoreB').value = match.scoreB;
+
+  document.querySelectorAll('.pick-cb').forEach(cb => {
+    const onThisTeam = cb.getAttribute('data-team') === 'A'
+      ? match.teamA.players.includes(cb.value)
+      : match.teamB.players.includes(cb.value);
+    cb.checked = onThisTeam;
+    cb.closest('label').classList.toggle('picked', onThisTeam);
+  });
+  syncPickAvailability();
+  renderGoalAssistInputs();
+
+  const counts = {};
+  match.events.forEach(ev => {
+    if(!counts[ev.playerId]) counts[ev.playerId] = { goals: 0, assists: 0 };
+    if(ev.type === 'goal') counts[ev.playerId].goals++;
+    if(ev.type === 'assist') counts[ev.playerId].assists++;
+  });
+  document.querySelectorAll('#event-rows .ga-row').forEach(row => {
+    const pid = row.getAttribute('data-player-id');
+    const c = counts[pid] || { goals: 0, assists: 0 };
+    row.querySelector('.ga-goals').value = c.goals;
+    row.querySelector('.ga-assists').value = c.assists;
+  });
+
+  document.getElementById('save-match-btn').textContent = 'Update match';
+  document.getElementById('edit-banner').style.display = 'flex';
+  switchPanel('newmatch');
+  showToast('Editing match — make your changes and tap Update match');
+}
+
+function exitEditMode(){
+  editingMatchId = null;
+  document.getElementById('save-match-btn').textContent = 'Save match';
+  document.getElementById('edit-banner').style.display = 'none';
+}
+
+document.getElementById('cancel-edit-btn').addEventListener('click', () => {
+  exitEditMode();
+  resetMatchForm();
+  switchPanel('history');
+});
+
 document.getElementById('save-match-btn').addEventListener('click', async () => {
   const teamAName = document.getElementById('teamA-name').value.trim() || 'Team A';
   const teamBName = document.getElementById('teamB-name').value.trim() || 'Team B';
@@ -441,32 +517,32 @@ document.getElementById('save-match-btn').addEventListener('click', async () => 
     for(let i = 0; i < assists; i++) events.push({ team, playerId, type: 'assist' });
   });
 
+  const isEditing = !!editingMatchId;
   const match = {
-    id: uid(),
+    id: isEditing ? editingMatchId : uid(),
     date,
     teamA: { name: teamAName, players: idsA },
     teamB: { name: teamBName, players: idsB },
     scoreA, scoreB,
     events
   };
-  data.matches.push(match);
+
+  if(isEditing){
+    const idx = data.matches.findIndex(m => m.id === editingMatchId);
+    if(idx !== -1) data.matches[idx] = match; else data.matches.push(match);
+  }else{
+    data.matches.push(match);
+  }
   await saveData();
 
-  // reset form
-  document.getElementById('teamA-name').value = 'Team A';
-  document.getElementById('teamB-name').value = 'Team B';
-  document.getElementById('scoreA').value = 0;
-  document.getElementById('scoreB').value = 0;
-  document.getElementById('match-date').value = '';
-  document.querySelectorAll('.pick-cb').forEach(cb => { cb.checked = false; cb.closest('label').classList.remove('picked'); });
-  syncPickAvailability();
-  renderGoalAssistInputs();
+  exitEditMode();
+  resetMatchForm();
 
   renderScoreboard();
   renderHistory();
   renderLeaderboard();
   renderPlayerStats();
-  showToast('Match saved');
+  showToast(isEditing ? 'Match updated' : 'Match saved');
   switchPanel('history');
 });
 
@@ -513,13 +589,26 @@ function renderHistory(){
           <div style="font-size:13px; margin-bottom:10px;">${m.teamB.players.map(playerName).map(escapeHtml).join(', ')}</div>
           <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">Goals &amp; assists</div>
           ${evLines}
-          ${isAdmin ? `<button class="ghost" style="margin-top:8px;" data-delete-match="${m.id}">Delete this match</button>` : ''}
+          ${isAdmin ? `
+            <div style="display:flex; gap:8px; margin-top:8px;">
+              <button class="ghost" data-edit-match="${m.id}">Edit this match</button>
+              <button class="ghost" data-delete-match="${m.id}">Delete this match</button>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
   }).join('');
 }
 document.getElementById('history-list').addEventListener('click', async (e) => {
+  const editBtn = e.target.closest('[data-edit-match]');
+  if(editBtn){
+    e.stopPropagation();
+    const id = editBtn.getAttribute('data-edit-match');
+    const match = data.matches.find(m => m.id === id);
+    if(match) enterEditMode(match);
+    return;
+  }
   const del = e.target.closest('[data-delete-match]');
   if(del){
     e.stopPropagation();
@@ -681,6 +770,7 @@ function escapeHtml(str){
 
 // init
 document.getElementById('match-date').valueAsDate = new Date();
+updateNavVisibility();
 (async () => {
   await loadAuth();
   await loadData();

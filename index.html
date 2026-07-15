@@ -21,6 +21,7 @@
   <div class="admin-bar">
     <button class="admin-btn" id="admin-toggle-btn">Admin unlock</button>
   </div>
+  <div style="text-align:center; font-family:'Space Mono',monospace; font-size:10px; color:rgba(245,241,230,0.4); margin-top:6px;">Unlock Admin to log a new match</div>
 </header>
 
 <nav>
@@ -93,6 +94,10 @@
       <p style="font-size:12px; color:rgba(22,24,28,0.5); margin:-8px 0 10px; font-family:'Space Mono',monospace;">Pick players above, then enter each player's totals for this match.</p>
       <div id="event-rows"></div>
 
+      <div id="edit-banner" class="edit-banner" style="display:none;">
+        <span>Editing an existing match</span>
+        <button type="button" class="ghost" id="cancel-edit-btn">Cancel edit</button>
+      </div>
       <button class="primary" id="save-match-btn">Save match</button>
     </div>
   </section>
