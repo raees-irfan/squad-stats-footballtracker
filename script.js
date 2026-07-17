@@ -507,6 +507,39 @@ document.getElementById('save-match-btn').addEventListener('click', async () => 
   const scoreB = parseInt(document.getElementById('scoreB').value) || 0;
   const date = document.getElementById('match-date').value || new Date().toISOString().slice(0,10);
 
+  // Validate player goals match team goals
+  let teamAGoals = 0, teamBGoals = 0;
+  let teamAAssists = 0, teamBAssists = 0;
+  document.querySelectorAll('#event-rows .ga-row').forEach(row => {
+    const playerId = row.getAttribute('data-player-id');
+    const goals = parseInt(row.querySelector('.ga-goals').value) || 0;
+    const assists = parseInt(row.querySelector('.ga-assists').value) || 0;
+    if(idsA.includes(playerId)){
+      teamAGoals += goals;
+      teamAAssists += assists;
+    } else {
+      teamBGoals += goals;
+      teamBAssists += assists;
+    }
+  });
+
+  if(teamAGoals !== scoreA){
+    showToast(`Team A player goals (${teamAGoals}) must match team score (${scoreA})`);
+    return;
+  }
+  if(teamBGoals !== scoreB){
+    showToast(`Team B player goals (${teamBGoals}) must match team score (${scoreB})`);
+    return;
+  }
+  if(teamAAssists > teamAGoals){
+    showToast(`Team A assists (${teamAAssists}) cannot exceed goals (${teamAGoals})`);
+    return;
+  }
+  if(teamBAssists > teamBGoals){
+    showToast(`Team B assists (${teamBAssists}) cannot exceed goals (${teamBGoals})`);
+    return;
+  }
+
   const events = [];
   document.querySelectorAll('#event-rows .ga-row').forEach(row => {
     const playerId = row.getAttribute('data-player-id');
