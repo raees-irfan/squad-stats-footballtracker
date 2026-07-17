@@ -39,10 +39,59 @@
   <section class="panel active" id="panel-squad">
     <h2 class="section-title">Squad</h2>
     <div class="card">
-      <label for="new-player-name">Add a player (name will be saved in CAPS)</label>
+      <label for="new-player-name">Player name (saved in CAPS)</label>
+      <input type="text" id="new-player-name" placeholder="PLAYER NAME" style="text-transform:uppercase;">
+
       <div class="row2">
-        <div><input type="text" id="new-player-name" placeholder="PLAYER NAME" style="text-transform:uppercase;"></div>
+        <div>
+          <label for="new-player-position">Position</label>
+          <select id="new-player-position">
+            <option value="">Select…</option>
+            <option value="GK">Goalkeeper</option>
+            <option value="DEF">Defender</option>
+            <option value="MID">Midfielder</option>
+            <option value="FWD">Forward</option>
+          </select>
+        </div>
+        <div>
+          <label for="new-player-jersey">Jersey number</label>
+          <input type="number" min="0" max="99" id="new-player-jersey">
+        </div>
       </div>
+
+      <div class="row2">
+        <div>
+          <label for="new-player-age">Age</label>
+          <input type="number" min="0" id="new-player-age">
+        </div>
+        <div>
+          <label for="new-player-height">Height (cm)</label>
+          <input type="number" min="0" id="new-player-height">
+        </div>
+      </div>
+
+      <div class="row2">
+        <div>
+          <label for="new-player-team">Favourite team</label>
+          <input type="text" id="new-player-team">
+        </div>
+        <div>
+          <label for="new-player-foot">Preferred foot</label>
+          <select id="new-player-foot">
+            <option value="">Select…</option>
+            <option value="Left">Left</option>
+            <option value="Right">Right</option>
+            <option value="Both">Both</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="new-player-nickname">Nickname</label>
+      <input type="text" id="new-player-nickname" maxlength="24">
+
+      <label for="new-player-bio">Bio / catchphrase</label>
+      <input type="text" id="new-player-bio" maxlength="80" placeholder="e.g. Never tracks back">
+
       <button class="primary" id="add-player-btn">Add player</button>
     </div>
     <div id="squad-list" class="chip-list"></div>

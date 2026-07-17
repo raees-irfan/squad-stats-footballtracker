@@ -151,6 +151,7 @@ function updateAdminUI(){
   updateNavVisibility();
   renderHistory();
   renderSquad();
+  renderPlayerStats();
 }
 function updateNavVisibility(){
   const newMatchBtn = document.querySelector('nav button[data-panel="newmatch"]');
@@ -308,8 +309,41 @@ document.getElementById('add-player-btn').addEventListener('click', async () => 
   if(data.players.some(p => p.name === name)){
     showToast('That player already exists'); return;
   }
-  data.players.push({ id: uid(), name });
+
+  const position = document.getElementById('new-player-position').value;
+  if(!position){ showToast('Pick a position first'); return; }
+
+  const jerseyRaw = document.getElementById('new-player-jersey').value;
+  const ageRaw = document.getElementById('new-player-age').value;
+  const heightRaw = document.getElementById('new-player-height').value;
+
+  const player = {
+    id: uid(),
+    name,
+    profile: {
+      position,
+      jerseyNumber: jerseyRaw !== '' ? parseInt(jerseyRaw) : null,
+      age: ageRaw !== '' ? parseInt(ageRaw) : null,
+      height: heightRaw !== '' ? parseInt(heightRaw) : null,
+      favouriteTeam: document.getElementById('new-player-team').value.trim(),
+      preferredFoot: document.getElementById('new-player-foot').value,
+      nickname: document.getElementById('new-player-nickname').value.trim(),
+      bio: document.getElementById('new-player-bio').value.trim(),
+      submitted: true
+    }
+  };
+  data.players.push(player);
+
   input.value = '';
+  document.getElementById('new-player-position').value = '';
+  document.getElementById('new-player-jersey').value = '';
+  document.getElementById('new-player-age').value = '';
+  document.getElementById('new-player-height').value = '';
+  document.getElementById('new-player-team').value = '';
+  document.getElementById('new-player-foot').value = '';
+  document.getElementById('new-player-nickname').value = '';
+  document.getElementById('new-player-bio').value = '';
+
   renderSquad();
   renderPlayerPicks();
   renderLeaderboard();
@@ -668,7 +702,7 @@ document.getElementById('history-list').addEventListener('click', async (e) => {
 /* ---------- Shared stat computation ---------- */
 function computePlayerStats(){
   const stats = {};
-  data.players.forEach(p => { stats[p.id] = { id: p.id, name: p.name, goals: 0, assists: 0, matches: 0, points: 0 }; });
+  data.players.forEach(p => { stats[p.id] = { id: p.id, name: p.name, goals: 0, assists: 0, matches: 0, points: 0, concededTotal: 0 }; });
 
   function applyTeamResult(ids, scoredFor, scoredAgainst){
     const won = scoredFor > scoredAgainst;
@@ -676,6 +710,7 @@ function computePlayerStats(){
     ids.forEach(pid => {
       if(!stats[pid]) return;
       stats[pid].matches++;
+      stats[pid].concededTotal += scoredAgainst;
       if(won) stats[pid].points += POINTS.WIN;
       if(cleanish) stats[pid].points += POINTS.CLEAN_SHEET;
     });
@@ -739,7 +774,242 @@ function renderLeaderboard(){
   `;
 }
 
-/* ---------- Player Stats sheet (one card per player, A-Z) ---------- */
+/* ---------- Player profiles & FPL-style card ratings ---------- */
+const RATING_BASE = 60;
+
+const POSITION_META = {
+  GK:  { label: 'GK',  full: 'Goalkeeper', color: 'var(--amber)' },
+  DEF: { label: 'DEF', full: 'Defender',   color: 'var(--turf)' },
+  MID: { label: 'MID', full: 'Midfielder', color: 'var(--pitch-dark)' },
+  FWD: { label: 'FWD', full: 'Forward',    color: 'var(--red)' }
+};
+
+// How much each attribute counts toward the single Overall number, per position.
+const POSITION_WEIGHTS = {
+  GK:  { finishing: 0.10, passing: 0.20, defending: 0.70 },
+  DEF: { finishing: 0.15, passing: 0.25, defending: 0.60 },
+  MID: { finishing: 0.30, passing: 0.40, defending: 0.30 },
+  FWD: { finishing: 0.55, passing: 0.25, defending: 0.20 }
+};
+const DEFAULT_WEIGHTS = { finishing: 0.34, passing: 0.33, defending: 0.33 };
+
+/* Attacking-style ladder used for both Finishing (goals/match) and
+   Passing (assists/match) — same bands per your spec. */
+function attackTier(avgPerMatch){
+  if(avgPerMatch >= 5) return { key: 't5', min: 95, max: 99 };
+  if(avgPerMatch >= 3) return { key: 't3', min: 90, max: 94 };
+  if(avgPerMatch >= 2) return { key: 't2', min: 80, max: 89 };
+  if(avgPerMatch >= 1) return { key: 't1', min: 70, max: 79 };
+  return { key: 't0', min: RATING_BASE, max: RATING_BASE };
+}
+
+/* Defending ladder — fewer goals conceded per match = better.
+   Bands below 2 / under 4 / under 5 match what you described; anything
+   at or above 5 conceded per match (or no matches played) sits at the base. */
+function defendTier(avgConceded, matches){
+  if(matches === 0) return { key: 'd0', min: RATING_BASE, max: RATING_BASE };
+  if(avgConceded < 2) return { key: 'd3', min: 95, max: 99 };
+  if(avgConceded < 4) return { key: 'd2', min: 80, max: 89 };
+  if(avgConceded < 5) return { key: 'd1', min: 70, max: 79 };
+  return { key: 'd0', min: RATING_BASE, max: RATING_BASE };
+}
+
+function rollInRange(min, max){
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+/* Rolls (once) or reuses a player's Finishing/Passing/Defending numbers.
+   A number only re-rolls when the player's underlying tier actually changes,
+   so their rating stays stable between renders instead of flickering. Returns
+   true if anything changed (so callers know whether to persist). */
+function ensurePlayerRatings(player, statRow){
+  if(!player.ratings) player.ratings = {};
+  let dirty = false;
+  const matches = statRow ? statRow.matches : 0;
+  const avgGoals = matches ? statRow.goals / matches : 0;
+  const avgAssists = matches ? statRow.assists / matches : 0;
+  const avgConceded = matches ? statRow.concededTotal / matches : 0;
+
+  const tiers = {
+    finishing: attackTier(avgGoals),
+    passing: attackTier(avgAssists),
+    defending: defendTier(avgConceded, matches)
+  };
+
+  Object.keys(tiers).forEach(cat => {
+    const tier = tiers[cat];
+    const existing = player.ratings[cat];
+    if(!existing || existing.tierKey !== tier.key){
+      player.ratings[cat] = { tierKey: tier.key, value: rollInRange(tier.min, tier.max) };
+      dirty = true;
+    }
+  });
+  return dirty;
+}
+
+function getPlayerRatingValues(player){
+  const r = player.ratings || {};
+  return {
+    finishing: r.finishing ? r.finishing.value : RATING_BASE,
+    passing: r.passing ? r.passing.value : RATING_BASE,
+    defending: r.defending ? r.defending.value : RATING_BASE
+  };
+}
+
+function computeOverall(player){
+  const vals = getPlayerRatingValues(player);
+  const pos = player.profile && player.profile.position;
+  const w = POSITION_WEIGHTS[pos] || DEFAULT_WEIGHTS;
+  return Math.round(vals.finishing * w.finishing + vals.passing * w.passing + vals.defending * w.defending);
+}
+
+/* Which player's card is expanded, and which player's profile form (if any)
+   is currently open, in the Player Stats panel. */
+let expandedPlayerId = null;
+let profileEditPlayerId = null;
+
+function profileFormHtml(player){
+  const pr = player.profile || {};
+  return `
+    <div class="profile-form" data-player-id="${player.id}">
+      <div class="row2">
+        <div>
+          <label>Position</label>
+          <select class="pf-position">
+            <option value="">Select…</option>
+            <option value="GK" ${pr.position === 'GK' ? 'selected' : ''}>Goalkeeper</option>
+            <option value="DEF" ${pr.position === 'DEF' ? 'selected' : ''}>Defender</option>
+            <option value="MID" ${pr.position === 'MID' ? 'selected' : ''}>Midfielder</option>
+            <option value="FWD" ${pr.position === 'FWD' ? 'selected' : ''}>Forward</option>
+          </select>
+        </div>
+        <div>
+          <label>Jersey number</label>
+          <input type="number" min="0" max="99" class="pf-jersey" value="${pr.jerseyNumber ?? ''}">
+        </div>
+      </div>
+      <div class="row2">
+        <div><label>Age</label><input type="number" min="0" class="pf-age" value="${pr.age ?? ''}"></div>
+        <div><label>Height (cm)</label><input type="number" min="0" class="pf-height" value="${pr.height ?? ''}"></div>
+      </div>
+      <div class="row2">
+        <div><label>Favourite team</label><input type="text" class="pf-team" value="${escapeHtml(pr.favouriteTeam || '')}"></div>
+        <div>
+          <label>Preferred foot</label>
+          <select class="pf-foot">
+            <option value="">Select…</option>
+            <option value="Left" ${pr.preferredFoot === 'Left' ? 'selected' : ''}>Left</option>
+            <option value="Right" ${pr.preferredFoot === 'Right' ? 'selected' : ''}>Right</option>
+            <option value="Both" ${pr.preferredFoot === 'Both' ? 'selected' : ''}>Both</option>
+          </select>
+        </div>
+      </div>
+      <label>Nickname</label>
+      <input type="text" class="pf-nickname" maxlength="24" value="${escapeHtml(pr.nickname || '')}">
+      <label>Bio / catchphrase</label>
+      <input type="text" class="pf-bio" maxlength="80" placeholder="e.g. Never tracks back" value="${escapeHtml(pr.bio || '')}">
+      <div style="display:flex; gap:8px; margin-top:4px;">
+        <button type="button" class="primary pf-save" style="width:auto; flex:1;">Save card</button>
+        <button type="button" class="secondary pf-cancel" style="width:auto;">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+function fplCardHtml(r, player){
+  const pr = player.profile;
+  const posMeta = POSITION_META[pr.position] || { label: '—', color: 'var(--ink)' };
+  const ratings = getPlayerRatingValues(player);
+  const overall = computeOverall(player);
+  const footerBits = [
+    pr.favouriteTeam ? `<div>⚽ ${escapeHtml(pr.favouriteTeam)}</div>` : '',
+    pr.preferredFoot ? `<div>🦶 ${escapeHtml(pr.preferredFoot)}</div>` : '',
+    pr.age ? `<div>🎂 ${escapeHtml(String(pr.age))}</div>` : '',
+    pr.height ? `<div>📏 ${escapeHtml(String(pr.height))}cm</div>` : ''
+  ].join('');
+  return `
+    <div class="fpl-card">
+      <div class="fpl-card-top" style="background:${posMeta.color};">
+        <span>${posMeta.label}</span>
+        <span class="fpl-overall">${overall} OVR</span>
+      </div>
+      <div class="fpl-photo-wrap">
+        ${pr.jerseyNumber != null && pr.jerseyNumber !== '' ? `<span class="fpl-jersey-ghost">${escapeHtml(String(pr.jerseyNumber))}</span>` : ''}
+        ${avatarHtml(player, 84)}
+      </div>
+      <div class="fpl-name">${escapeHtml(player.name)}</div>
+      ${pr.nickname ? `<div class="fpl-nickname">"${escapeHtml(pr.nickname)}"</div>` : ''}
+      <div class="fpl-attrs">
+        <div><span>${ratings.finishing}</span>FIN</div>
+        <div><span>${ratings.passing}</span>PAS</div>
+        <div><span>${ratings.defending}</span>DEF</div>
+      </div>
+      <div class="fpl-secondary-stats">
+        <div><span>${r.goals}</span>Goals</div>
+        <div><span>${r.assists}</span>Assists</div>
+        <div><span>${r.matches}</span>MP</div>
+        <div><span>${r.points}</span>Pts</div>
+      </div>
+      ${footerBits ? `<div class="fpl-footer">${footerBits}</div>` : ''}
+      ${pr.bio ? `<div class="fpl-bio">“${escapeHtml(pr.bio)}”</div>` : ''}
+      ${isAdmin ? `<button type="button" class="ghost" data-edit-profile="${player.id}" style="margin-top:8px;">Edit profile</button>` : ''}
+    </div>
+  `;
+}
+
+function expandedCardHtml(r, player){
+  if(profileEditPlayerId === player.id){
+    return profileFormHtml(player);
+  }
+  if(player.profile && player.profile.submitted){
+    return fplCardHtml(r, player);
+  }
+  return `
+    <div class="profile-empty">
+      <p>This card hasn't been set up yet.</p>
+      <button type="button" class="secondary" data-setup-profile="${player.id}">Set up card</button>
+    </div>
+  `;
+}
+
+function handleProfileSave(formEl){
+  if(!formEl) return;
+  const playerId = formEl.getAttribute('data-player-id');
+  const player = data.players.find(p => p.id === playerId);
+  if(!player) return;
+
+  const wasSubmitted = !!(player.profile && player.profile.submitted);
+  if(wasSubmitted && !isAdmin){
+    showToast('Only admin can edit an existing card');
+    return;
+  }
+
+  const position = formEl.querySelector('.pf-position').value;
+  if(!position){ showToast('Pick a position first'); return; }
+
+  const jerseyRaw = formEl.querySelector('.pf-jersey').value;
+  const ageRaw = formEl.querySelector('.pf-age').value;
+  const heightRaw = formEl.querySelector('.pf-height').value;
+
+  player.profile = {
+    position,
+    jerseyNumber: jerseyRaw !== '' ? parseInt(jerseyRaw) : null,
+    age: ageRaw !== '' ? parseInt(ageRaw) : null,
+    height: heightRaw !== '' ? parseInt(heightRaw) : null,
+    favouriteTeam: formEl.querySelector('.pf-team').value.trim(),
+    preferredFoot: formEl.querySelector('.pf-foot').value,
+    nickname: formEl.querySelector('.pf-nickname').value.trim(),
+    bio: formEl.querySelector('.pf-bio').value.trim(),
+    submitted: true
+  };
+
+  profileEditPlayerId = null;
+  saveData();
+  renderPlayerStats();
+  showToast(wasSubmitted ? 'Profile updated' : 'Card set up!');
+}
+
+/* ---------- Player Stats: compact list -> tap to expand into FPL card ---------- */
 function renderPlayerStats(){
   const wrap = document.getElementById('playerstats-content');
   if(data.players.length === 0){
@@ -747,44 +1017,92 @@ function renderPlayerStats(){
     return;
   }
   const stats = computePlayerStats();
-  const rows = Object.values(stats).sort((a,b) => a.name.localeCompare(b.name));
-  wrap.innerHTML = rows.map(r => {
-    const player = data.players.find(p => p.id === r.id) || { name: r.name };
+
+  let dirty = false;
+  data.players.forEach(p => {
+    if(ensurePlayerRatings(p, stats[p.id])) dirty = true;
+  });
+  if(dirty) saveData();
+
+  const rows = Object.values(stats)
+    .map(r => {
+      const player = data.players.find(p => p.id === r.id) || { id: r.id, name: r.name };
+      return { r, player, overall: computeOverall(player) };
+    })
+    .sort((a, b) => b.overall - a.overall || b.r.points - a.r.points || a.r.name.localeCompare(b.r.name));
+
+  wrap.innerHTML = rows.map(({ r, player, overall }) => {
+    const expanded = expandedPlayerId === r.id;
+    const posMeta = player.profile && player.profile.position ? POSITION_META[player.profile.position] : null;
+    const posBadge = posMeta
+      ? `<span class="pos-badge" style="background:${posMeta.color};">${posMeta.label}</span>`
+      : `<span class="pos-badge pos-badge--empty">SET UP</span>`;
+
+    const ratings = getPlayerRatingValues(player);
+
     return `
-    <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div style="display:flex; align-items:center; gap:10px;">
+      <div class="card player-row" data-player-toggle="${r.id}">
+        <div class="player-row-top">
           <span ${isAdmin ? `data-photo-player="${r.id}" title="Tap to change photo" style="cursor:pointer; display:inline-flex;"` : 'style="display:inline-flex;"'}>${avatarHtml(player, 40)}</span>
-          <div class="display" style="font-size:22px; color:var(--pitch-dark);">${escapeHtml(r.name)}</div>
+          <div class="player-row-mid">
+            <div class="player-row-name">${escapeHtml(r.name)}</div>
+            ${posBadge}
+          </div>
+          <div class="player-row-stats">
+            <div class="ovr-block"><span>${overall}</span>OVR</div>
+            <div><span>${ratings.finishing}</span>FIN</div>
+            <div><span>${ratings.passing}</span>PAS</div>
+            <div><span>${ratings.defending}</span>DEF</div>
+            <div><span>${r.matches}</span>MP</div>
+          </div>
         </div>
-        <div style="font-family:'Space Mono',monospace; font-size:11px; color:rgba(22,24,28,0.5);">${r.matches} match${r.matches === 1 ? '' : 'es'} played</div>
+        ${expanded ? expandedCardHtml(r, player) : ''}
       </div>
-      <div style="display:flex; gap:24px; margin-top:10px; flex-wrap:wrap;">
-        <div>
-          <div style="font-family:'Space Mono',monospace; font-size:28px; font-weight:700; color:var(--amber);">${r.goals}</div>
-          <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5);">Total goals</div>
-        </div>
-        <div>
-          <div style="font-family:'Space Mono',monospace; font-size:28px; font-weight:700; color:var(--turf);">${r.assists}</div>
-          <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5);">Total assists</div>
-        </div>
-        <div>
-          <div style="font-family:'Space Mono',monospace; font-size:28px; font-weight:700; color:var(--ink);">${r.goals + r.assists}</div>
-          <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5);">Combined</div>
-        </div>
-        <div>
-          <div style="font-family:'Space Mono',monospace; font-size:28px; font-weight:700; color:var(--red);">${r.points}</div>
-          <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5);">Points</div>
-        </div>
-      </div>
-    </div>
-  `;}).join('');
+    `;
+  }).join('');
 }
 
 document.getElementById('playerstats-content').addEventListener('click', (e) => {
   const avatarBtn = e.target.closest('[data-photo-player]');
   if(avatarBtn){
     triggerPhotoUpload(avatarBtn.getAttribute('data-photo-player'));
+    return;
+  }
+  const setupBtn = e.target.closest('[data-setup-profile]');
+  if(setupBtn){
+    e.stopPropagation();
+    profileEditPlayerId = setupBtn.getAttribute('data-setup-profile');
+    renderPlayerStats();
+    return;
+  }
+  const editBtn = e.target.closest('[data-edit-profile]');
+  if(editBtn){
+    e.stopPropagation();
+    if(!isAdmin) return;
+    profileEditPlayerId = editBtn.getAttribute('data-edit-profile');
+    renderPlayerStats();
+    return;
+  }
+  const cancelBtn = e.target.closest('.pf-cancel');
+  if(cancelBtn){
+    e.stopPropagation();
+    profileEditPlayerId = null;
+    renderPlayerStats();
+    return;
+  }
+  const saveBtn = e.target.closest('.pf-save');
+  if(saveBtn){
+    e.stopPropagation();
+    handleProfileSave(saveBtn.closest('.profile-form'));
+    return;
+  }
+  if(e.target.closest('.profile-form')) return; // don't toggle while interacting with form fields
+
+  const toggleRow = e.target.closest('[data-player-toggle]');
+  if(toggleRow){
+    const id = toggleRow.getAttribute('data-player-toggle');
+    expandedPlayerId = expandedPlayerId === id ? null : id;
+    renderPlayerStats();
   }
 });
 
