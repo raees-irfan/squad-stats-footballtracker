@@ -380,8 +380,21 @@
     margin:10px auto 0;
     display:flex;
     justify-content:center;
+    align-items:center;
+    flex-wrap:wrap;
     gap:8px;
   }
+  .admin-bar input{
+    width:auto;
+    margin:0;
+    padding:6px 10px;
+    font-size:12px;
+    border-radius:20px;
+    border:1px solid rgba(255,255,255,0.25);
+    background:rgba(255,255,255,0.08);
+    color:var(--chalk);
+  }
+  .admin-bar input::placeholder{color:rgba(245,241,230,0.45);}
   .admin-btn{
     background:rgba(255,255,255,0.08);
     border:1px solid rgba(255,255,255,0.2);
@@ -452,6 +465,18 @@
     display:flex; gap:10px; margin-top:4px;
   }
   .modal-actions button{width:auto; flex:1;}
+  #modal-textarea{
+    width:100%;
+    padding:10px 12px;
+    border:1px solid var(--line);
+    border-radius:5px;
+    background:#fff;
+    font-family:'Work Sans', sans-serif;
+    font-size:14px;
+    color:var(--ink);
+    margin-bottom:14px;
+    resize:vertical;
+  }
 
   /* Avatars (added for the points/photos update) */
   .chip [data-photo-player]:hover > div,
