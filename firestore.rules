@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && myDoc().role == 'admin';
+    }
+
+    // Approval is a separate flag from role: anyone can create a Firebase
+    // Auth account (that endpoint is public - a hidden/removed "Sign up"
+    // button in the app UI does NOT stop someone from calling it directly
+    // with the same, non-secret, web config). This flag is what actually
+    // gates read access to real data, regardless of how the account was
+    // created. New accounts default to approved == false and get nothing
+    // until an admin flips it - enforced here, not by the app UI.
+    function isApproved() {
+      return isSignedIn() && myDoc().approved == true;
+    }
+
+    match /users/{userId} {
+      // Each user reads their own doc; admins can read the full roster
+      // (needed for the approve/promote list). Not "any signed-in user
+      // reads everyone's doc" - that would leak every user's email to
+      // every other signed-in user for no functional benefit.
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+
+      // Self-signup: can only create your OWN doc, role must be "user",
+      // and approved must be false - you cannot self-approve on creation.
+      allow create: if isSignedIn()
+                    && request.auth.uid == userId
+                    && request.resource.data.role == 'user'
+                    && request.resource.data.approved == false;
+
+      // Self-edit (e.g. displayName): role AND approved must stay
+      // unchanged. Admin-edit: can change anything, including someone
+      // else's role/approved status.
+      allow update: if isAdmin()
+                    || (request.auth.uid == userId
+                        && request.resource.data.role == resource.data.role
+                        && request.resource.data.approved == resource.data.approved);
+
+      allow delete: if isAdmin();
+    }
+
+    match /players/{playerId} {
+      allow read: if isApproved() || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /matches/{matchId} {
+      allow read: if isApproved() || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Feedback creation isn't approval-gated - it's harmless (no data
+    // exposure) and doubles as the channel a pending user can use to ask
+    // an admin to approve them.
+    match /feedback/{feedbackId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+                    && request.resource.data.authorUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+  }
+}

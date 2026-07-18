@@ -1,19 +1,43 @@
-const STORAGE_KEY = 'matchday-data';
-const AUTH_KEY = 'matchday-auth';
-const DEFAULT_ADMIN_PASS = 'chaitudv220710';
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import {
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  signOut, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc,
+  updateDoc, deleteDoc
+} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
+/* Your Firebase project's web config (Project settings > your app).
+   This is not a secret - it identifies the project, not a credential.
+   Real access control is enforced by firestore.rules. */
+const firebaseConfig = {
+  apiKey: "AIzaSyAyhzLOKkX2ZZJQbLdcNr4Y8xTf15My6EI",
+  authDomain: "matchday-bbdf3.firebaseapp.com",
+  projectId: "matchday-bbdf3",
+  storageBucket: "matchday-bbdf3.firebasestorage.app",
+  messagingSenderId: "833275024370",
+  appId: "1:833275024370:web:c7a1216ecfeb2d8889916b"
+};
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+
+const playersCol = collection(db, 'players');
+const matchesCol = collection(db, 'matches');
+const usersCol = collection(db, 'users');
+const feedbackCol = collection(db, 'feedback');
+
 let data = { players: [], matches: [] };
-let auth = { adminPass: DEFAULT_ADMIN_PASS };
+let currentUser = null; // { uid, email, displayName, role }
 let isAdmin = false;
 let photoUploadTargetId = null;
 
 /* ---------- Points ---------- */
 const POINTS = {
   GOAL: 5,
-  ASSIST: 3,
-  CLEAN_SHEET: 3,   // team concedes fewer than 3 goals
-  WIN: 5
+  ASSIST: 3
 };
-const CLEAN_SHEET_THRESHOLD = 3; // "concedes less than 3 goals"
 
 /* ---------- Hardcoded player photos ----------
    Optional: if you'd rather hardcode photos in code instead of (or alongside)
@@ -21,10 +45,6 @@ const CLEAN_SHEET_THRESHOLD = 3; // "concedes less than 3 goals"
    Key = player name EXACTLY as it appears in the Squad tab (it's stored in CAPS).
    Value = any image URL, or a base64 data URL.
    Uploaded photos (saved via Admin) always take priority over this map.
-   Example:
-   const PLAYER_PHOTOS = {
-     "MESSI": "https://example.com/messi.jpg"
-   };
 ------------------------------------------------- */
 const PLAYER_PHOTOS = {};
 
@@ -37,7 +57,7 @@ function avatarHtml(player, size){
   const photo = getPlayerPhoto(player);
   const initials = escapeHtml((player.name || '?').trim().slice(0,2).toUpperCase());
   if(photo){
-    return `<img src="${photo}" alt="${escapeHtml(player.name)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block;flex-shrink:0;">`;
+    return `<img src="${escapeHtml(photo)}" alt="${escapeHtml(player.name)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block;flex-shrink:0;">`;
   }
   const fontSize = Math.round(size * 0.38);
   return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--turf, #2f6b3c);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:${fontSize}px;font-weight:700;flex-shrink:0;">${initials}</div>`;
@@ -71,7 +91,7 @@ function readAndResizeImage(file, maxDim = 200, quality = 0.75){
 }
 
 function triggerPhotoUpload(playerId){
-  if(!isAdmin){ showToast('Unlock Admin to change photos'); return; }
+  if(!isAdmin){ showToast('Admin only'); return; }
   photoUploadTargetId = playerId;
   document.getElementById('photo-upload-input').click();
 }
@@ -84,10 +104,8 @@ document.getElementById('photo-upload-input').addEventListener('change', async (
   if(!player) return;
   try{
     const dataUrl = await readAndResizeImage(file);
-    player.photo = dataUrl;
-    await saveData();
-    renderSquad();
-    renderPlayerStats();
+    await updateDoc(doc(playersCol, player.id), { photo: dataUrl });
+    await loadData();
     showToast('Photo updated for ' + player.name);
   }catch(err){
     showToast(err.message || 'Could not update photo');
@@ -96,99 +114,26 @@ document.getElementById('photo-upload-input').addEventListener('change', async (
   }
 });
 
-/* ---------- Auth ---------- */
-async function loadAuth(){
-  try{
-    const res = await window.storage.get(AUTH_KEY, true);
-    if(res && res.value){
-      auth = JSON.parse(res.value);
-    } else {
-      await window.storage.set(AUTH_KEY, JSON.stringify(auth), true);
-    }
-  }catch(e){
-    try{ await window.storage.set(AUTH_KEY, JSON.stringify(auth), true); }catch(e2){}
-  }
-}
-async function saveAuth(){
-  try{
-    const res = await window.storage.set(AUTH_KEY, JSON.stringify(auth), true);
-    if(!res){ showToast('Could not save passcode'); return; }
-    showToast('Admin passcode updated');
-  }catch(e){
-    showToast('Save failed: ' + e.message);
-  }
-}
-document.getElementById('admin-toggle-btn').addEventListener('click', async () => {
-  if(isAdmin){
-    isAdmin = false;
-    updateAdminUI();
-    return;
-  }
-  const val = await showModal({
-    title: 'Admin unlock',
-    message: 'Enter the admin passcode to get delete access.',
-    showInput: true,
-    inputType: 'password',
-    confirmText: 'Unlock'
-  });
-  if(val === null) return;
-  if(val === auth.adminPass){
-    isAdmin = true;
-    showToast('Admin unlocked');
-  }else{
-    showToast('Wrong admin passcode');
-  }
-  updateAdminUI();
-});
-function updateAdminUI(){
-  const btn = document.getElementById('admin-toggle-btn');
-  btn.textContent = isAdmin ? 'Admin: ON' : 'Admin unlock';
-  btn.classList.toggle('on', isAdmin);
-  document.getElementById('admin-settings').style.display = isAdmin ? 'block' : 'none';
-  if(isAdmin){
-    document.getElementById('admin-pass-input').value = auth.adminPass;
-  }
-  updateNavVisibility();
-  renderHistory();
-  renderSquad();
-  renderPlayerStats();
-}
-function updateNavVisibility(){
-  const newMatchBtn = document.querySelector('nav button[data-panel="newmatch"]');
-  newMatchBtn.style.display = isAdmin ? '' : 'none';
-  if(!isAdmin){
-    if(editingMatchId){ exitEditMode(); resetMatchForm(); }
-    if(newMatchBtn.classList.contains('active')){
-      switchPanel('squad');
-    }
-  }
-}
-document.getElementById('save-passcodes-btn').addEventListener('click', async () => {
-  const ap = document.getElementById('admin-pass-input').value.trim();
-  if(!ap){ showToast('Admin passcode is required'); return; }
-  auth.adminPass = ap;
-  await saveAuth();
-});
-
-function uid(){ return Math.random().toString(36).slice(2, 10); }
-
 /* ---------- Custom modal (replaces prompt/confirm) ---------- */
-function showModal({ title = '', message = '', showInput = false, inputType = 'text', confirmText = 'OK', cancelText = 'Cancel' } = {}){
+function showModal({ title = '', message = '', showInput = false, inputType = 'text', useTextarea = false, confirmText = 'OK', cancelText = 'Cancel' } = {}){
   return new Promise((resolve) => {
     const overlay = document.getElementById('app-modal');
     const input = document.getElementById('modal-input');
+    const textarea = document.getElementById('modal-textarea');
     const confirmBtn = document.getElementById('modal-confirm');
     const cancelBtn = document.getElementById('modal-cancel');
 
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-message').textContent = message;
-    input.style.display = showInput ? 'block' : 'none';
+    input.style.display = (showInput && !useTextarea) ? 'block' : 'none';
+    textarea.style.display = (showInput && useTextarea) ? 'block' : 'none';
     input.type = inputType;
     input.value = '';
+    textarea.value = '';
     confirmBtn.textContent = confirmText;
     cancelBtn.textContent = cancelText;
     overlay.classList.add('show');
-    if(showInput) setTimeout(() => input.focus(), 50);
+    if(showInput) setTimeout(() => (useTextarea ? textarea : input).focus(), 50);
 
     function cleanup(result){
       overlay.classList.remove('show');
@@ -197,9 +142,9 @@ function showModal({ title = '', message = '', showInput = false, inputType = 't
       input.removeEventListener('keydown', onKeydown);
       resolve(result);
     }
-    function onConfirm(){ cleanup(showInput ? input.value : true); }
+    function onConfirm(){ cleanup(showInput ? (useTextarea ? textarea.value.trim() : input.value) : true); }
     function onCancel(){ cleanup(showInput ? null : false); }
-    function onKeydown(e){ if(e.key === 'Enter'){ e.preventDefault(); onConfirm(); } }
+    function onKeydown(e){ if(e.key === 'Enter' && !useTextarea){ e.preventDefault(); onConfirm(); } }
     confirmBtn.addEventListener('click', onConfirm);
     cancelBtn.addEventListener('click', onCancel);
     input.addEventListener('keydown', onKeydown);
@@ -213,28 +158,221 @@ function showToast(msg){
   setTimeout(()=>t.classList.remove('show'), 1800);
 }
 
-async function loadData(){
+/* ---------- Auth ---------- */
+document.getElementById('auth-signup-btn').addEventListener('click', async () => {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if(!email || !password){ showToast('Enter email and password'); return; }
   try{
-    const res = await window.storage.get(STORAGE_KEY, true);
-    if(res && res.value){
-      data = JSON.parse(res.value);
-      if(!data.players) data.players = [];
-      if(!data.matches) data.matches = [];
-    }
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await setDoc(doc(usersCol, cred.user.uid), {
+      email, displayName: email.split('@')[0], role: 'user', approved: false
+    });
+    showToast('Account created — an admin needs to approve you before you can see squad data.');
   }catch(e){
-    // no data yet, keep defaults
+    showToast(e.message || 'Sign up failed');
+  }
+});
+
+document.getElementById('auth-signin-btn').addEventListener('click', async () => {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if(!email || !password){ showToast('Enter email and password'); return; }
+  try{
+    await signInWithEmailAndPassword(auth, email, password);
+  }catch(e){
+    showToast(e.message || 'Sign in failed');
+  }
+});
+
+document.getElementById('auth-signout-btn').addEventListener('click', async () => {
+  await signOut(auth);
+});
+
+onAuthStateChanged(auth, async (user) => {
+  if(user){
+    let role = 'user', displayName = user.email, approved = false;
+    try{
+      const snap = await getDoc(doc(usersCol, user.uid));
+      if(snap.exists()){
+        role = snap.data().role || 'user';
+        displayName = snap.data().displayName || user.email;
+        approved = !!snap.data().approved;
+      }
+    }catch(e){ /* fall back to defaults above */ }
+    currentUser = { uid: user.uid, email: user.email, displayName, role, approved };
+    isAdmin = role === 'admin';
+    document.getElementById('auth-signed-out').style.display = 'none';
+    document.getElementById('auth-signed-in').style.display = 'flex';
+    document.getElementById('auth-user-label').textContent = `${displayName} (${isAdmin ? 'admin' : approved ? 'user' : 'pending approval'})`;
+    document.getElementById('feedback-btn').style.display = isAdmin ? 'none' : 'inline-block';
+    document.getElementById('auth-email').value = '';
+    document.getElementById('auth-password').value = '';
+    await loadData();
+  }else{
+    currentUser = null;
+    isAdmin = false;
+    document.getElementById('auth-signed-out').style.display = 'flex';
+    document.getElementById('auth-signed-in').style.display = 'none';
+    data = { players: [], matches: [] };
+    renderAll();
+  }
+  updateAdminUI();
+});
+
+function canViewData(){
+  return isAdmin || (currentUser && currentUser.approved);
+}
+
+function updateAdminUI(){
+  document.getElementById('admin-settings').style.display = isAdmin ? 'block' : 'none';
+  if(isAdmin) refreshAdminPanels();
+  updateNavVisibility();
+  renderSquad();
+  renderHistory();
+  renderPlayerStats();
+}
+function updateNavVisibility(){
+  const newMatchBtn = document.querySelector('nav button[data-panel="newmatch"]');
+  newMatchBtn.style.display = isAdmin ? '' : 'none';
+  if(!isAdmin){
+    if(editingMatchId){ exitEditMode(); resetMatchForm(); }
+    if(newMatchBtn.classList.contains('active')){
+      switchPanel('squad');
+    }
+  }
+}
+
+/* ---------- Feedback (users -> admins) ---------- */
+document.getElementById('feedback-btn').addEventListener('click', async () => {
+  if(!currentUser) return;
+  const msg = await showModal({
+    title: 'Send feedback',
+    message: "Tell the admin what you noticed — corrections, missing stats, anything.",
+    showInput: true,
+    useTextarea: true,
+    confirmText: 'Send'
+  });
+  if(!msg) return;
+  try{
+    await addDoc(feedbackCol, {
+      authorUid: currentUser.uid,
+      authorLabel: currentUser.displayName,
+      message: msg,
+      createdAt: Date.now(),
+      status: 'open'
+    });
+    showToast('Feedback sent');
+  }catch(e){
+    showToast('Could not send feedback: ' + e.message);
+  }
+});
+
+async function refreshAdminPanels(){
+  await Promise.all([renderAdminUsers(), renderAdminFeedback()]);
+}
+
+async function renderAdminUsers(){
+  const wrap = document.getElementById('admin-users-list');
+  try{
+    const snap = await getDocs(usersCol);
+    const users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if(users.length === 0){ wrap.innerHTML = '<div style="font-size:12px; color:rgba(22,24,28,0.5);">No signed-up users yet.</div>'; return; }
+    wrap.innerHTML = users.map(u => {
+      const status = u.role === 'admin' ? 'admin' : (u.approved ? 'user' : 'pending approval');
+      let actionBtn = '';
+      if(status === 'pending approval') actionBtn = `<button class="secondary" data-approve-user="${u.id}" style="width:auto;">Approve</button>`;
+      else if(status === 'user') actionBtn = `<button class="secondary" data-promote-user="${u.id}" style="width:auto;">Promote to admin</button>`;
+      return `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); font-size:13px;">
+          <span>${escapeHtml(u.displayName || u.email)} <span style="font-family:'Space Mono',monospace; font-size:10px; color:rgba(22,24,28,0.5);">(${escapeHtml(status)})</span></span>
+          ${actionBtn}
+        </div>
+      `;
+    }).join('');
+  }catch(e){
+    wrap.innerHTML = `<div style="font-size:12px; color:rgba(22,24,28,0.5);">Could not load users: ${escapeHtml(e.message)}</div>`;
+  }
+}
+document.getElementById('admin-users-list').addEventListener('click', async (e) => {
+  if(!isAdmin) return;
+  const approveBtn = e.target.closest('[data-approve-user]');
+  if(approveBtn){
+    const uid = approveBtn.getAttribute('data-approve-user');
+    try{
+      await updateDoc(doc(usersCol, uid), { approved: true });
+      showToast('User approved');
+      await renderAdminUsers();
+    }catch(e){
+      showToast('Could not approve user: ' + e.message);
+    }
+    return;
+  }
+  const promoteBtn = e.target.closest('[data-promote-user]');
+  if(promoteBtn){
+    const uid = promoteBtn.getAttribute('data-promote-user');
+    try{
+      await updateDoc(doc(usersCol, uid), { role: 'admin', approved: true });
+      showToast('User promoted to admin');
+      await renderAdminUsers();
+    }catch(e){
+      showToast('Could not promote user: ' + e.message);
+    }
+    return;
+  }
+});
+
+async function renderAdminFeedback(){
+  const wrap = document.getElementById('admin-feedback-list');
+  try{
+    const snap = await getDocs(feedbackCol);
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(f => f.status !== 'resolved');
+    if(items.length === 0){ wrap.innerHTML = '<div style="font-size:12px; color:rgba(22,24,28,0.5);">No open feedback.</div>'; return; }
+    wrap.innerHTML = items.map(f => `
+      <div style="padding:8px 0; border-bottom:1px solid var(--line); font-size:13px;">
+        <div style="font-size:11px; color:rgba(22,24,28,0.5); margin-bottom:2px;">${escapeHtml(f.authorLabel || 'someone')}</div>
+        <div style="margin-bottom:6px;">${escapeHtml(f.message)}</div>
+        <button class="secondary" data-resolve-feedback="${f.id}" style="width:auto;">Mark resolved</button>
+      </div>
+    `).join('');
+  }catch(e){
+    wrap.innerHTML = `<div style="font-size:12px; color:rgba(22,24,28,0.5);">Could not load feedback: ${escapeHtml(e.message)}</div>`;
+  }
+}
+document.getElementById('admin-feedback-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-resolve-feedback]');
+  if(!btn || !isAdmin) return;
+  const id = btn.getAttribute('data-resolve-feedback');
+  try{
+    await updateDoc(doc(feedbackCol, id), { status: 'resolved' });
+    await renderAdminFeedback();
+  }catch(e){
+    showToast('Could not update feedback: ' + e.message);
+  }
+});
+
+/* ---------- Data (Firestore) ---------- */
+async function loadData(){
+  if(!canViewData()){
+    // Not approved yet - don't even attempt the read, Firestore rules
+    // would reject it anyway and it's not an error worth surfacing.
+    data = { players: [], matches: [] };
+    renderAll();
+    return;
+  }
+  try{
+    const [playersSnap, matchesSnap] = await Promise.all([getDocs(playersCol), getDocs(matchesCol)]);
+    data.players = playersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    data.matches = matchesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }catch(e){
+    showToast('Could not load data: ' + e.message);
     data = { players: [], matches: [] };
   }
   renderAll();
 }
 
-async function saveData(){
-  try{
-    const res = await window.storage.set(STORAGE_KEY, JSON.stringify(data), true);
-    if(!res){ showToast('Could not save — try again'); }
-  }catch(e){
-    showToast('Save failed: ' + e.message);
-  }
+function pendingApprovalHtml(){
+  return '<div class="empty-state"><span class="display">Pending approval</span>An admin needs to approve your account before you can see squad data. You can still send feedback in the meantime.</div>';
 }
 
 function renderAll(){
@@ -277,6 +415,14 @@ function renderScoreboard(){
 /* ---------- Squad ---------- */
 function renderSquad(){
   const list = document.getElementById('squad-list');
+  if(!currentUser){
+    list.innerHTML = '<div class="empty-state" style="width:100%;">Sign in to see the squad.</div>';
+    return;
+  }
+  if(!canViewData()){
+    list.innerHTML = pendingApprovalHtml();
+    return;
+  }
   if(data.players.length === 0){
     list.innerHTML = '<div class="empty-state" style="width:100%;">No players yet. Add your first squad member above.</div>';
     return;
@@ -303,6 +449,7 @@ document.getElementById('new-player-name').addEventListener('input', (e) => {
   e.target.setSelectionRange(pos, pos);
 });
 document.getElementById('add-player-btn').addEventListener('click', async () => {
+  if(!isAdmin){ showToast('Admin only'); return; }
   const input = document.getElementById('new-player-name');
   const name = input.value.trim().toUpperCase();
   if(!name){ showToast('Enter a name first'); return; }
@@ -318,7 +465,6 @@ document.getElementById('add-player-btn').addEventListener('click', async () => 
   const heightRaw = document.getElementById('new-player-height').value;
 
   const player = {
-    id: uid(),
     name,
     profile: {
       position,
@@ -332,7 +478,13 @@ document.getElementById('add-player-btn').addEventListener('click', async () => 
       submitted: true
     }
   };
-  data.players.push(player);
+
+  try{
+    await addDoc(playersCol, player);
+  }catch(e){
+    showToast('Could not add player: ' + e.message);
+    return;
+  }
 
   input.value = '';
   document.getElementById('new-player-position').value = '';
@@ -344,17 +496,14 @@ document.getElementById('add-player-btn').addEventListener('click', async () => 
   document.getElementById('new-player-nickname').value = '';
   document.getElementById('new-player-bio').value = '';
 
-  renderSquad();
-  renderPlayerPicks();
-  renderLeaderboard();
-  renderPlayerStats();
-  await saveData();
+  await loadData();
   showToast('Player added');
 });
 
 document.getElementById('squad-list').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-remove-player]');
   if(!btn) return;
+  if(!isAdmin){ showToast('Admin only'); return; }
   const id = btn.getAttribute('data-remove-player');
   const ok = await showModal({
     title: 'Remove player?',
@@ -363,12 +512,13 @@ document.getElementById('squad-list').addEventListener('click', async (e) => {
     cancelText: 'Cancel'
   });
   if(!ok) return;
-  data.players = data.players.filter(p => p.id !== id);
-  renderSquad();
-  renderPlayerPicks();
-  renderLeaderboard();
-  renderPlayerStats();
-  await saveData();
+  try{
+    await deleteDoc(doc(playersCol, id));
+  }catch(e){
+    showToast('Could not remove player: ' + e.message);
+    return;
+  }
+  await loadData();
 });
 
 /* ---------- New Match: player picking ---------- */
@@ -413,9 +563,7 @@ function syncPickAvailability(){
   });
 }
 
-/* ---------- New Match: per-player goals/assists totals ----------
-   Keeps existing values (via data-player-id) when re-rendered, e.g. when
-   another checkbox is toggled or a team name changes. ---------- */
+/* ---------- New Match: per-player goals/assists totals ---------- */
 function getPickedIds(team){
   return Array.from(document.querySelectorAll(`.pick-cb[data-team="${team}"]:checked`)).map(cb => cb.value);
 }
@@ -530,6 +678,7 @@ document.getElementById('cancel-edit-btn').addEventListener('click', () => {
 });
 
 document.getElementById('save-match-btn').addEventListener('click', async () => {
+  if(!isAdmin){ showToast('Admin only'); return; }
   const teamAName = document.getElementById('teamA-name').value.trim() || 'Team A';
   const teamBName = document.getElementById('teamB-name').value.trim() || 'Team B';
   const idsA = getPickedIds('A');
@@ -586,7 +735,6 @@ document.getElementById('save-match-btn').addEventListener('click', async () => 
 
   const isEditing = !!editingMatchId;
   const match = {
-    id: isEditing ? editingMatchId : uid(),
     date,
     teamA: { name: teamAName, players: idsA },
     teamB: { name: teamBName, players: idsB },
@@ -594,21 +742,20 @@ document.getElementById('save-match-btn').addEventListener('click', async () => 
     events
   };
 
-  if(isEditing){
-    const idx = data.matches.findIndex(m => m.id === editingMatchId);
-    if(idx !== -1) data.matches[idx] = match; else data.matches.push(match);
-  }else{
-    data.matches.push(match);
+  try{
+    if(isEditing){
+      await setDoc(doc(matchesCol, editingMatchId), match);
+    }else{
+      await addDoc(matchesCol, match);
+    }
+  }catch(e){
+    showToast('Could not save match: ' + e.message);
+    return;
   }
-  await saveData();
 
   exitEditMode();
   resetMatchForm();
-
-  renderScoreboard();
-  renderHistory();
-  renderLeaderboard();
-  renderPlayerStats();
+  await loadData();
   showToast(isEditing ? 'Match updated' : 'Match saved');
   switchPanel('history');
 });
@@ -626,14 +773,20 @@ function formatDate(d){
 }
 function renderHistory(){
   const wrap = document.getElementById('history-list');
+  if(!currentUser){
+    wrap.innerHTML = '<div class="empty-state"><span class="display">Sign in</span>Sign in to see match history.</div>';
+    return;
+  }
+  if(!canViewData()){
+    wrap.innerHTML = pendingApprovalHtml();
+    return;
+  }
   if(data.matches.length === 0){
     wrap.innerHTML = '<div class="empty-state"><span class="display">No matches yet</span>Log your first match and it will show up here.</div>';
     return;
   }
   const sorted = [...data.matches].sort((a,b)=> new Date(b.date) - new Date(a.date));
   wrap.innerHTML = sorted.map(m => {
-    const goals = m.events.filter(e => e.type === 'goal');
-    const assists = m.events.filter(e => e.type === 'assist');
     const evLines = m.events.map(e => `
       <div class="ev-line">
         <span class="badge ${e.type}">${e.type}</span>
@@ -671,6 +824,7 @@ document.getElementById('history-list').addEventListener('click', async (e) => {
   const editBtn = e.target.closest('[data-edit-match]');
   if(editBtn){
     e.stopPropagation();
+    if(!isAdmin) return;
     const id = editBtn.getAttribute('data-edit-match');
     const match = data.matches.find(m => m.id === id);
     if(match) enterEditMode(match);
@@ -679,6 +833,7 @@ document.getElementById('history-list').addEventListener('click', async (e) => {
   const del = e.target.closest('[data-delete-match]');
   if(del){
     e.stopPropagation();
+    if(!isAdmin) return;
     const ok = await showModal({
       title: 'Delete match?',
       message: 'This removes the match and its goal/assist log for good. This cannot be undone.',
@@ -687,9 +842,13 @@ document.getElementById('history-list').addEventListener('click', async (e) => {
     });
     if(!ok) return;
     const id = del.getAttribute('data-delete-match');
-    data.matches = data.matches.filter(m => m.id !== id);
-    await saveData();
-    renderScoreboard(); renderHistory(); renderLeaderboard(); renderPlayerStats();
+    try{
+      await deleteDoc(doc(matchesCol, id));
+    }catch(e){
+      showToast('Could not delete match: ' + e.message);
+      return;
+    }
+    await loadData();
     return;
   }
   const card = e.target.closest('[data-match-toggle]');
@@ -699,26 +858,15 @@ document.getElementById('history-list').addEventListener('click', async (e) => {
   }
 });
 
-/* ---------- Shared stat computation ---------- */
+/* ---------- Shared stat computation: goals and assists only ---------- */
 function computePlayerStats(){
   const stats = {};
-  data.players.forEach(p => { stats[p.id] = { id: p.id, name: p.name, goals: 0, assists: 0, matches: 0, points: 0, concededTotal: 0 }; });
-
-  function applyTeamResult(ids, scoredFor, scoredAgainst){
-    const won = scoredFor > scoredAgainst;
-    const cleanish = scoredAgainst < CLEAN_SHEET_THRESHOLD;
-    ids.forEach(pid => {
-      if(!stats[pid]) return;
-      stats[pid].matches++;
-      stats[pid].concededTotal += scoredAgainst;
-      if(won) stats[pid].points += POINTS.WIN;
-      if(cleanish) stats[pid].points += POINTS.CLEAN_SHEET;
-    });
-  }
+  data.players.forEach(p => { stats[p.id] = { id: p.id, name: p.name, goals: 0, assists: 0, matches: 0, points: 0 }; });
 
   data.matches.forEach(m => {
-    applyTeamResult(m.teamA.players, m.scoreA, m.scoreB);
-    applyTeamResult(m.teamB.players, m.scoreB, m.scoreA);
+    [...m.teamA.players, ...m.teamB.players].forEach(pid => {
+      if(stats[pid]) stats[pid].matches++;
+    });
     m.events.forEach(ev => {
       if(!stats[ev.playerId]) return;
       if(ev.type === 'goal'){ stats[ev.playerId].goals++; stats[ev.playerId].points += POINTS.GOAL; }
@@ -731,16 +879,24 @@ function computePlayerStats(){
 /* ---------- Leaderboard ---------- */
 function renderLeaderboard(){
   const wrap = document.getElementById('leaderboard-content');
+  if(!currentUser){
+    wrap.innerHTML = '<div class="empty-state"><span class="display">Sign in</span>Sign in to see the leaderboard.</div>';
+    return;
+  }
+  if(!canViewData()){
+    wrap.innerHTML = pendingApprovalHtml();
+    return;
+  }
   if(data.players.length === 0){
     wrap.innerHTML = '<div class="empty-state"><span class="display">No players yet</span>Add players in the Squad tab to start tracking stats.</div>';
     return;
   }
-  const stats = computePlayerStats();
-  const rows = Object.values(stats).sort((a,b) => b.points - a.points || (b.goals + b.assists) - (a.goals + a.assists) || b.goals - a.goals);
   if(data.matches.length === 0){
     wrap.innerHTML = '<div class="empty-state"><span class="display">No matches logged</span>Stats will appear once you log a match.</div>';
     return;
   }
+  const stats = computePlayerStats();
+  const rows = Object.values(stats).sort((a,b) => b.points - a.points || (b.goals + b.assists) - (a.goals + a.assists) || b.goals - a.goals);
   wrap.innerHTML = `
     <table>
       <thead>
@@ -769,99 +925,18 @@ function renderLeaderboard(){
       </tbody>
     </table>
     <div style="font-size:11px; color:rgba(22,24,28,0.45); margin-top:8px;">
-      Points: goal = ${POINTS.GOAL} · assist = ${POINTS.ASSIST} · team concedes under ${CLEAN_SHEET_THRESHOLD} = +${POINTS.CLEAN_SHEET} each · win = +${POINTS.WIN} each (bonuses stack)
+      Points: goal = ${POINTS.GOAL} · assist = ${POINTS.ASSIST}
     </div>
   `;
 }
 
-/* ---------- Player profiles & FPL-style card ratings ---------- */
-const RATING_BASE = 60;
-
+/* ---------- Player profiles ---------- */
 const POSITION_META = {
   GK:  { label: 'GK',  full: 'Goalkeeper', color: 'var(--amber)' },
   DEF: { label: 'DEF', full: 'Defender',   color: 'var(--turf)' },
   MID: { label: 'MID', full: 'Midfielder', color: 'var(--pitch-dark)' },
   FWD: { label: 'FWD', full: 'Forward',    color: 'var(--red)' }
 };
-
-// How much each attribute counts toward the single Overall number, per position.
-const POSITION_WEIGHTS = {
-  GK:  { finishing: 0.10, passing: 0.20, defending: 0.70 },
-  DEF: { finishing: 0.15, passing: 0.25, defending: 0.60 },
-  MID: { finishing: 0.30, passing: 0.40, defending: 0.30 },
-  FWD: { finishing: 0.55, passing: 0.25, defending: 0.20 }
-};
-const DEFAULT_WEIGHTS = { finishing: 0.34, passing: 0.33, defending: 0.33 };
-
-/* Attacking-style ladder used for both Finishing (goals/match) and
-   Passing (assists/match) — same bands per your spec. */
-function attackTier(avgPerMatch){
-  if(avgPerMatch >= 5) return { key: 't5', min: 95, max: 99 };
-  if(avgPerMatch >= 3) return { key: 't3', min: 90, max: 94 };
-  if(avgPerMatch >= 2) return { key: 't2', min: 80, max: 89 };
-  if(avgPerMatch >= 1) return { key: 't1', min: 70, max: 79 };
-  return { key: 't0', min: RATING_BASE, max: RATING_BASE };
-}
-
-/* Defending ladder — fewer goals conceded per match = better.
-   Bands below 2 / under 4 / under 5 match what you described; anything
-   at or above 5 conceded per match (or no matches played) sits at the base. */
-function defendTier(avgConceded, matches){
-  if(matches === 0) return { key: 'd0', min: RATING_BASE, max: RATING_BASE };
-  if(avgConceded < 2) return { key: 'd3', min: 95, max: 99 };
-  if(avgConceded < 4) return { key: 'd2', min: 80, max: 89 };
-  if(avgConceded < 5) return { key: 'd1', min: 70, max: 79 };
-  return { key: 'd0', min: RATING_BASE, max: RATING_BASE };
-}
-
-function rollInRange(min, max){
-  return min + Math.floor(Math.random() * (max - min + 1));
-}
-
-/* Rolls (once) or reuses a player's Finishing/Passing/Defending numbers.
-   A number only re-rolls when the player's underlying tier actually changes,
-   so their rating stays stable between renders instead of flickering. Returns
-   true if anything changed (so callers know whether to persist). */
-function ensurePlayerRatings(player, statRow){
-  if(!player.ratings) player.ratings = {};
-  let dirty = false;
-  const matches = statRow ? statRow.matches : 0;
-  const avgGoals = matches ? statRow.goals / matches : 0;
-  const avgAssists = matches ? statRow.assists / matches : 0;
-  const avgConceded = matches ? statRow.concededTotal / matches : 0;
-
-  const tiers = {
-    finishing: attackTier(avgGoals),
-    passing: attackTier(avgAssists),
-    defending: defendTier(avgConceded, matches)
-  };
-
-  Object.keys(tiers).forEach(cat => {
-    const tier = tiers[cat];
-    const existing = player.ratings[cat];
-    if(!existing || existing.tierKey !== tier.key){
-      player.ratings[cat] = { tierKey: tier.key, value: rollInRange(tier.min, tier.max) };
-      dirty = true;
-    }
-  });
-  return dirty;
-}
-
-function getPlayerRatingValues(player){
-  const r = player.ratings || {};
-  return {
-    finishing: r.finishing ? r.finishing.value : RATING_BASE,
-    passing: r.passing ? r.passing.value : RATING_BASE,
-    defending: r.defending ? r.defending.value : RATING_BASE
-  };
-}
-
-function computeOverall(player){
-  const vals = getPlayerRatingValues(player);
-  const pos = player.profile && player.profile.position;
-  const w = POSITION_WEIGHTS[pos] || DEFAULT_WEIGHTS;
-  return Math.round(vals.finishing * w.finishing + vals.passing * w.passing + vals.defending * w.defending);
-}
 
 /* Which player's card is expanded, and which player's profile form (if any)
    is currently open, in the Player Stats panel. */
@@ -919,8 +994,6 @@ function profileFormHtml(player){
 function fplCardHtml(r, player){
   const pr = player.profile;
   const posMeta = POSITION_META[pr.position] || { label: '—', color: 'var(--ink)' };
-  const ratings = getPlayerRatingValues(player);
-  const overall = computeOverall(player);
   const footerBits = [
     pr.favouriteTeam ? `<div>⚽ ${escapeHtml(pr.favouriteTeam)}</div>` : '',
     pr.preferredFoot ? `<div>🦶 ${escapeHtml(pr.preferredFoot)}</div>` : '',
@@ -931,7 +1004,7 @@ function fplCardHtml(r, player){
     <div class="fpl-card">
       <div class="fpl-card-top" style="background:${posMeta.color};">
         <span>${posMeta.label}</span>
-        <span class="fpl-overall">${overall} OVR</span>
+        <span class="fpl-overall">${r.points} PTS</span>
       </div>
       <div class="fpl-photo-wrap">
         ${pr.jerseyNumber != null && pr.jerseyNumber !== '' ? `<span class="fpl-jersey-ghost">${escapeHtml(String(pr.jerseyNumber))}</span>` : ''}
@@ -939,11 +1012,6 @@ function fplCardHtml(r, player){
       </div>
       <div class="fpl-name">${escapeHtml(player.name)}</div>
       ${pr.nickname ? `<div class="fpl-nickname">"${escapeHtml(pr.nickname)}"</div>` : ''}
-      <div class="fpl-attrs">
-        <div><span>${ratings.finishing}</span>FIN</div>
-        <div><span>${ratings.passing}</span>PAS</div>
-        <div><span>${ratings.defending}</span>DEF</div>
-      </div>
       <div class="fpl-secondary-stats">
         <div><span>${r.goals}</span>Goals</div>
         <div><span>${r.assists}</span>Assists</div>
@@ -972,7 +1040,7 @@ function expandedCardHtml(r, player){
   `;
 }
 
-function handleProfileSave(formEl){
+async function handleProfileSave(formEl){
   if(!formEl) return;
   const playerId = formEl.getAttribute('data-player-id');
   const player = data.players.find(p => p.id === playerId);
@@ -991,7 +1059,7 @@ function handleProfileSave(formEl){
   const ageRaw = formEl.querySelector('.pf-age').value;
   const heightRaw = formEl.querySelector('.pf-height').value;
 
-  player.profile = {
+  const profile = {
     position,
     jerseyNumber: jerseyRaw !== '' ? parseInt(jerseyRaw) : null,
     age: ageRaw !== '' ? parseInt(ageRaw) : null,
@@ -1003,42 +1071,45 @@ function handleProfileSave(formEl){
     submitted: true
   };
 
+  try{
+    await updateDoc(doc(playersCol, playerId), { profile });
+  }catch(e){
+    showToast('Could not save card: ' + e.message);
+    return;
+  }
+
   profileEditPlayerId = null;
-  saveData();
-  renderPlayerStats();
+  await loadData();
   showToast(wasSubmitted ? 'Profile updated' : 'Card set up!');
 }
 
-/* ---------- Player Stats: compact list -> tap to expand into FPL card ---------- */
+/* ---------- Player Stats: compact list -> tap to expand into card ---------- */
 function renderPlayerStats(){
   const wrap = document.getElementById('playerstats-content');
+  if(!currentUser){
+    wrap.innerHTML = '<div class="empty-state"><span class="display">Sign in</span>Sign in to see player stats.</div>';
+    return;
+  }
+  if(!canViewData()){
+    wrap.innerHTML = pendingApprovalHtml();
+    return;
+  }
   if(data.players.length === 0){
     wrap.innerHTML = '<div class="empty-state"><span class="display">No players yet</span>Add players in the Squad tab to start tracking stats.</div>';
     return;
   }
   const stats = computePlayerStats();
 
-  let dirty = false;
-  data.players.forEach(p => {
-    if(ensurePlayerRatings(p, stats[p.id])) dirty = true;
-  });
-  if(dirty) saveData();
-
   const rows = Object.values(stats)
-    .map(r => {
-      const player = data.players.find(p => p.id === r.id) || { id: r.id, name: r.name };
-      return { r, player, overall: computeOverall(player) };
-    })
-    .sort((a, b) => b.overall - a.overall || b.r.points - a.r.points || a.r.name.localeCompare(b.r.name));
+    .map(r => ({ r, player: data.players.find(p => p.id === r.id) || { id: r.id, name: r.name } }))
+    .sort((a, b) => b.r.points - a.r.points || a.r.name.localeCompare(b.r.name));
 
-  wrap.innerHTML = rows.map(({ r, player, overall }) => {
+  wrap.innerHTML = rows.map(({ r, player }) => {
     const expanded = expandedPlayerId === r.id;
     const posMeta = player.profile && player.profile.position ? POSITION_META[player.profile.position] : null;
     const posBadge = posMeta
       ? `<span class="pos-badge" style="background:${posMeta.color};">${posMeta.label}</span>`
       : `<span class="pos-badge pos-badge--empty">SET UP</span>`;
-
-    const ratings = getPlayerRatingValues(player);
 
     return `
       <div class="card player-row" data-player-toggle="${r.id}">
@@ -1049,10 +1120,9 @@ function renderPlayerStats(){
             ${posBadge}
           </div>
           <div class="player-row-stats">
-            <div class="ovr-block"><span>${overall}</span>OVR</div>
-            <div><span>${ratings.finishing}</span>FIN</div>
-            <div><span>${ratings.passing}</span>PAS</div>
-            <div><span>${ratings.defending}</span>DEF</div>
+            <div class="ovr-block"><span>${r.points}</span>PTS</div>
+            <div><span>${r.goals}</span>G</div>
+            <div><span>${r.assists}</span>A</div>
             <div><span>${r.matches}</span>MP</div>
           </div>
         </div>
@@ -1122,7 +1192,4 @@ function escapeHtml(str){
 // init
 document.getElementById('match-date').valueAsDate = new Date();
 updateNavVisibility();
-(async () => {
-  await loadAuth();
-  await loadData();
-})();
+renderAll();

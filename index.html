@@ -18,10 +18,18 @@
   </div>
   <div class="tag" style="text-align:center; margin-top:2px;">squad stats tracker</div>
   <div id="scoreboard" class="scoreboard empty">Log your first match to see it here</div>
-  <div class="admin-bar">
-    <button class="admin-btn" id="admin-toggle-btn">Admin unlock</button>
+  <div class="admin-bar" id="auth-signed-out">
+    <input type="email" id="auth-email" placeholder="email">
+    <input type="password" id="auth-password" placeholder="password">
+    <button class="admin-btn" id="auth-signin-btn">Sign in</button>
+    <button class="admin-btn" id="auth-signup-btn">Sign up</button>
   </div>
-  <div style="text-align:center; font-family:'Space Mono',monospace; font-size:10px; color:rgba(245,241,230,0.4); margin-top:6px;">Unlock Admin to log a new match</div>
+  <div class="admin-bar" id="auth-signed-in" style="display:none;">
+    <span id="auth-user-label" class="admin-btn" style="cursor:default;"></span>
+    <button class="admin-btn" id="feedback-btn" style="display:none;">Send feedback</button>
+    <button class="admin-btn" id="auth-signout-btn">Sign out</button>
+  </div>
+  <div style="text-align:center; font-family:'Space Mono',monospace; font-size:10px; color:rgba(245,241,230,0.4); margin-top:6px;">Sign in, then wait for an admin to approve your account. Admins can log matches.</div>
 </header>
 
 <nav>
@@ -97,10 +105,10 @@
     <div id="squad-list" class="chip-list"></div>
 
     <div class="card settings-card" id="admin-settings" style="display:none;">
-      <label style="color:var(--pitch-dark);">Admin settings</label>
-      <label for="admin-pass-input">Admin passcode (needed to create/delete matches/players)</label>
-      <input type="text" id="admin-pass-input">
-      <button class="secondary" id="save-passcodes-btn" type="button">Save passcode</button>
+      <label style="color:var(--pitch-dark);">Users</label>
+      <div id="admin-users-list"></div>
+      <label style="color:var(--pitch-dark); margin-top:14px;">Feedback</label>
+      <div id="admin-feedback-list"></div>
     </div>
   </section>
 
@@ -177,6 +185,7 @@
     <div class="modal-title" id="modal-title"></div>
     <div class="modal-message" id="modal-message"></div>
     <input type="text" id="modal-input" style="display:none;">
+    <textarea id="modal-textarea" style="display:none;" rows="4"></textarea>
     <div class="modal-actions">
       <button class="secondary" id="modal-cancel">Cancel</button>
       <button class="primary" id="modal-confirm">OK</button>
@@ -187,6 +196,6 @@
 </div><!-- /#app -->
 
 <input type="file" id="photo-upload-input" accept="image/*" style="display:none;">
-<script src="script.js"></script>
+<script type="module" src="script.js"></script>
 </body>
 </html>
