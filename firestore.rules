@@ -52,7 +52,14 @@ service cloud.firestore {
 
     match /players/{playerId} {
       allow read: if isApproved() || isAdmin();
-      allow write: if isAdmin();
+      // Admins can create/edit any player. A signed-in, approved user can
+      // additionally create/edit ONLY the player doc whose ID equals their
+      // own auth uid - that's how "one profile per user" is enforced: the
+      // doc ID *is* the uid, so there's structurally nowhere else for a
+      // second profile to live.
+      allow create: if isAdmin() || (isApproved() && request.auth.uid == playerId);
+      allow update: if isAdmin() || (isApproved() && request.auth.uid == playerId);
+      allow delete: if isAdmin();
     }
 
     match /matches/{matchId} {
