@@ -32,6 +32,8 @@ let data = { players: [], matches: [] };
 let currentUser = null; // { uid, email, displayName, role }
 let isAdmin = false;
 let photoUploadTargetId = null;
+let showManageUsers = false;
+let creatingMyProfile = false;
 
 /* ---------- Points ---------- */
 const POINTS = {
@@ -42,7 +44,7 @@ const POINTS = {
 /* ---------- Hardcoded player photos ----------
    Optional: if you'd rather hardcode photos in code instead of (or alongside)
    uploading them via Admin settings, add entries here.
-   Key = player name EXACTLY as it appears in the Squad tab (it's stored in CAPS).
+   Key = player name EXACTLY as it appears in the Profile tab (it's stored in CAPS).
    Value = any image URL, or a base64 data URL.
    Uploaded photos (saved via Admin) always take priority over this map.
 ------------------------------------------------- */
@@ -272,6 +274,12 @@ async function refreshAdminPanels(){
   await Promise.all([renderAdminUsers(), renderAdminFeedback()]);
 }
 
+document.getElementById('toggle-manage-users-btn').addEventListener('click', () => {
+  showManageUsers = !showManageUsers;
+  document.getElementById('toggle-manage-users-btn').textContent = showManageUsers ? 'Hide user management' : 'Manage users';
+  renderAdminUsers();
+});
+
 async function renderAdminUsers(){
   const wrap = document.getElementById('admin-users-list');
   try{
@@ -280,13 +288,23 @@ async function renderAdminUsers(){
     if(users.length === 0){ wrap.innerHTML = '<div style="font-size:12px; color:rgba(22,24,28,0.5);">No signed-up users yet.</div>'; return; }
     wrap.innerHTML = users.map(u => {
       const status = u.role === 'admin' ? 'admin' : (u.approved ? 'user' : 'pending approval');
-      let actionBtn = '';
-      if(status === 'pending approval') actionBtn = `<button class="secondary" data-approve-user="${u.id}" style="width:auto;">Approve</button>`;
-      else if(status === 'user') actionBtn = `<button class="secondary" data-promote-user="${u.id}" style="width:auto;">Promote to admin</button>`;
+      const isSelf = currentUser && u.id === currentUser.uid;
+      const actions = [];
+      if(status === 'pending approval'){
+        actions.push(`<button class="secondary" data-approve-user="${u.id}" style="width:auto;">Approve</button>`);
+      }
+      if(showManageUsers){
+        if(status === 'user'){
+          actions.push(`<button class="secondary" data-promote-user="${u.id}" style="width:auto;">Promote to admin</button>`);
+        }
+        if(!isSelf){
+          actions.push(`<button class="ghost" data-remove-user="${u.id}">Remove</button>`);
+        }
+      }
       return `
         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); font-size:13px;">
           <span>${escapeHtml(u.displayName || u.email)} <span style="font-family:'Space Mono',monospace; font-size:10px; color:rgba(22,24,28,0.5);">(${escapeHtml(status)})</span></span>
-          ${actionBtn}
+          <span style="display:flex; gap:6px;">${actions.join('')}</span>
         </div>
       `;
     }).join('');
@@ -317,6 +335,25 @@ document.getElementById('admin-users-list').addEventListener('click', async (e) 
       await renderAdminUsers();
     }catch(e){
       showToast('Could not promote user: ' + e.message);
+    }
+    return;
+  }
+  const removeBtn = e.target.closest('[data-remove-user]');
+  if(removeBtn){
+    const uid = removeBtn.getAttribute('data-remove-user');
+    const ok = await showModal({
+      title: 'Remove user?',
+      message: "This revokes their access to squad data — they'll show up as pending again if they sign back in. It does not delete their login itself, so the email/password still works to sign in.",
+      confirmText: 'Remove',
+      cancelText: 'Cancel'
+    });
+    if(!ok) return;
+    try{
+      await deleteDoc(doc(usersCol, uid));
+      showToast('User removed');
+      await renderAdminUsers();
+    }catch(e){
+      showToast('Could not remove user: ' + e.message);
     }
     return;
   }
@@ -412,19 +449,107 @@ function renderScoreboard(){
   el.appendChild(dateEl);
 }
 
-/* ---------- Squad ---------- */
+/* ---------- Squad / Profile ---------- */
+function myProfileSquadSectionHtml(){
+  const myPlayer = data.players.find(p => p.id === currentUser.uid);
+
+  if(!myPlayer){
+    return creatingMyProfile ? myProfileFormHtml() : myProfilePromptHtml();
+  }
+  if(profileEditPlayerId === myPlayer.id){
+    return `<div class="card"><label style="color:var(--pitch-dark);">Edit your profile</label>${profileFormHtml(myPlayer)}</div>`;
+  }
+  const pr = myPlayer.profile || {};
+  const posMeta = pr.position ? POSITION_META[pr.position] : null;
+  const posBadge = posMeta
+    ? `<span class="pos-badge" style="background:${posMeta.color};">${posMeta.label}</span>`
+    : `<span class="pos-badge pos-badge--empty">SET UP</span>`;
+  return `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          ${avatarHtml(myPlayer, 40)}
+          <div>
+            <div class="display" style="font-size:20px; color:var(--pitch-dark); line-height:1;">${escapeHtml(myPlayer.name)}</div>
+            <div style="margin-top:4px;">${posBadge}</div>
+          </div>
+        </div>
+        <button type="button" class="secondary" data-edit-profile="${myPlayer.id}" style="width:auto;">Edit my profile</button>
+      </div>
+    </div>
+  `;
+}
+
+document.getElementById('squad-my-profile-section').addEventListener('click', (e) => {
+  const createBtn = e.target.closest('#create-my-profile-btn');
+  if(createBtn){
+    creatingMyProfile = true;
+    renderSquad();
+    return;
+  }
+  const editBtn = e.target.closest('[data-edit-profile]');
+  if(editBtn){
+    e.stopPropagation();
+    profileEditPlayerId = editBtn.getAttribute('data-edit-profile');
+    renderSquad();
+    return;
+  }
+  const cancelBtn = e.target.closest('.pf-cancel');
+  if(cancelBtn){
+    e.stopPropagation();
+    const formEl = cancelBtn.closest('.profile-form');
+    if(formEl && formEl.dataset.mode === 'create'){
+      creatingMyProfile = false;
+    }else{
+      profileEditPlayerId = null;
+    }
+    renderSquad();
+    return;
+  }
+  const saveBtn = e.target.closest('.pf-save');
+  if(saveBtn){
+    e.stopPropagation();
+    const formEl = saveBtn.closest('.profile-form');
+    if(formEl && formEl.dataset.mode === 'create'){
+      handleMyProfileCreate(formEl);
+    }else{
+      handleProfileSave(formEl);
+    }
+    return;
+  }
+});
+
 function renderSquad(){
+  const titleEl = document.getElementById('squad-panel-title');
+  const adminCard = document.getElementById('admin-add-player-card');
+  const myProfileWrap = document.getElementById('squad-my-profile-section');
   const list = document.getElementById('squad-list');
+
+  titleEl.textContent = 'Profile';
+
   if(!currentUser){
+    adminCard.style.display = 'none';
+    myProfileWrap.innerHTML = '';
     list.innerHTML = '<div class="empty-state" style="width:100%;">Sign in to see the squad.</div>';
     return;
   }
   if(!canViewData()){
+    adminCard.style.display = 'none';
+    myProfileWrap.innerHTML = '';
     list.innerHTML = pendingApprovalHtml();
     return;
   }
+
+  if(isAdmin){
+    adminCard.style.display = '';
+    myProfileWrap.innerHTML = '';
+  }else{
+    adminCard.style.display = 'none';
+    myProfileWrap.innerHTML = myProfileSquadSectionHtml();
+  }
+
   if(data.players.length === 0){
-    list.innerHTML = '<div class="empty-state" style="width:100%;">No players yet. Add your first squad member above.</div>';
+    list.innerHTML = `<div class="empty-state" style="width:100%;">No players yet.${isAdmin ? ' Add your first squad member above.' : ''}</div>`;
     return;
   }
   list.innerHTML = data.players.map(p => `
@@ -526,7 +651,7 @@ function renderPlayerPicks(){
   const a = document.getElementById('pickA');
   const b = document.getElementById('pickB');
   if(data.players.length === 0){
-    a.innerHTML = '<span style="font-size:13px; color:rgba(22,24,28,0.5);">Add players in the Squad tab first</span>';
+    a.innerHTML = '<span style="font-size:13px; color:rgba(22,24,28,0.5);">Add players in the Profile tab first</span>';
     b.innerHTML = a.innerHTML;
     return;
   }
@@ -888,7 +1013,7 @@ function renderLeaderboard(){
     return;
   }
   if(data.players.length === 0){
-    wrap.innerHTML = '<div class="empty-state"><span class="display">No players yet</span>Add players in the Squad tab to start tracking stats.</div>';
+    wrap.innerHTML = '<div class="empty-state"><span class="display">No players yet</span>Add players in the Profile tab to start tracking stats.</div>';
     return;
   }
   if(data.matches.length === 0){
@@ -943,52 +1068,125 @@ const POSITION_META = {
 let expandedPlayerId = null;
 let profileEditPlayerId = null;
 
+function profileFieldsHtml(pr = {}){
+  return `
+    <div class="row2">
+      <div>
+        <label>Position</label>
+        <select class="pf-position">
+          <option value="">Select…</option>
+          <option value="GK" ${pr.position === 'GK' ? 'selected' : ''}>Goalkeeper</option>
+          <option value="DEF" ${pr.position === 'DEF' ? 'selected' : ''}>Defender</option>
+          <option value="MID" ${pr.position === 'MID' ? 'selected' : ''}>Midfielder</option>
+          <option value="FWD" ${pr.position === 'FWD' ? 'selected' : ''}>Forward</option>
+        </select>
+      </div>
+      <div>
+        <label>Jersey number</label>
+        <input type="number" min="0" max="99" class="pf-jersey" value="${pr.jerseyNumber ?? ''}">
+      </div>
+    </div>
+    <div class="row2">
+      <div><label>Age</label><input type="number" min="0" class="pf-age" value="${pr.age ?? ''}"></div>
+      <div><label>Height (cm)</label><input type="number" min="0" class="pf-height" value="${pr.height ?? ''}"></div>
+    </div>
+    <div class="row2">
+      <div><label>Favourite team</label><input type="text" class="pf-team" value="${escapeHtml(pr.favouriteTeam || '')}"></div>
+      <div>
+        <label>Preferred foot</label>
+        <select class="pf-foot">
+          <option value="">Select…</option>
+          <option value="Left" ${pr.preferredFoot === 'Left' ? 'selected' : ''}>Left</option>
+          <option value="Right" ${pr.preferredFoot === 'Right' ? 'selected' : ''}>Right</option>
+          <option value="Both" ${pr.preferredFoot === 'Both' ? 'selected' : ''}>Both</option>
+        </select>
+      </div>
+    </div>
+    <label>Nickname</label>
+    <input type="text" class="pf-nickname" maxlength="24" value="${escapeHtml(pr.nickname || '')}">
+    <label>Bio / catchphrase</label>
+    <input type="text" class="pf-bio" maxlength="80" placeholder="e.g. Never tracks back" value="${escapeHtml(pr.bio || '')}">
+  `;
+}
+
 function profileFormHtml(player){
   const pr = player.profile || {};
   return `
-    <div class="profile-form" data-player-id="${player.id}">
-      <div class="row2">
-        <div>
-          <label>Position</label>
-          <select class="pf-position">
-            <option value="">Select…</option>
-            <option value="GK" ${pr.position === 'GK' ? 'selected' : ''}>Goalkeeper</option>
-            <option value="DEF" ${pr.position === 'DEF' ? 'selected' : ''}>Defender</option>
-            <option value="MID" ${pr.position === 'MID' ? 'selected' : ''}>Midfielder</option>
-            <option value="FWD" ${pr.position === 'FWD' ? 'selected' : ''}>Forward</option>
-          </select>
-        </div>
-        <div>
-          <label>Jersey number</label>
-          <input type="number" min="0" max="99" class="pf-jersey" value="${pr.jerseyNumber ?? ''}">
-        </div>
-      </div>
-      <div class="row2">
-        <div><label>Age</label><input type="number" min="0" class="pf-age" value="${pr.age ?? ''}"></div>
-        <div><label>Height (cm)</label><input type="number" min="0" class="pf-height" value="${pr.height ?? ''}"></div>
-      </div>
-      <div class="row2">
-        <div><label>Favourite team</label><input type="text" class="pf-team" value="${escapeHtml(pr.favouriteTeam || '')}"></div>
-        <div>
-          <label>Preferred foot</label>
-          <select class="pf-foot">
-            <option value="">Select…</option>
-            <option value="Left" ${pr.preferredFoot === 'Left' ? 'selected' : ''}>Left</option>
-            <option value="Right" ${pr.preferredFoot === 'Right' ? 'selected' : ''}>Right</option>
-            <option value="Both" ${pr.preferredFoot === 'Both' ? 'selected' : ''}>Both</option>
-          </select>
-        </div>
-      </div>
-      <label>Nickname</label>
-      <input type="text" class="pf-nickname" maxlength="24" value="${escapeHtml(pr.nickname || '')}">
-      <label>Bio / catchphrase</label>
-      <input type="text" class="pf-bio" maxlength="80" placeholder="e.g. Never tracks back" value="${escapeHtml(pr.bio || '')}">
+    <div class="profile-form" data-player-id="${player.id}" data-mode="edit">
+      ${profileFieldsHtml(pr)}
       <div style="display:flex; gap:8px; margin-top:4px;">
         <button type="button" class="primary pf-save" style="width:auto; flex:1;">Save card</button>
         <button type="button" class="secondary pf-cancel" style="width:auto;">Cancel</button>
       </div>
     </div>
   `;
+}
+
+function myProfilePromptHtml(){
+  return `
+    <div class="card">
+      <p style="margin:0 0 10px; font-size:14px;">You don't have a player profile yet — create one to show up in the squad and get tracked in matches.</p>
+      <button type="button" class="primary" id="create-my-profile-btn" style="width:auto;">Create my profile</button>
+    </div>
+  `;
+}
+
+function myProfileFormHtml(){
+  return `
+    <div class="card">
+      <label style="color:var(--pitch-dark);">Set up your profile</label>
+      <div class="profile-form" data-mode="create">
+        <label>Your name (saved in CAPS)</label>
+        <input type="text" class="pf-name" style="text-transform:uppercase;" placeholder="YOUR NAME">
+        ${profileFieldsHtml({})}
+        <div style="display:flex; gap:8px; margin-top:4px;">
+          <button type="button" class="primary pf-save" style="width:auto; flex:1;">Create profile</button>
+          <button type="button" class="secondary pf-cancel" style="width:auto;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function readProfileFieldsFromForm(formEl){
+  const jerseyRaw = formEl.querySelector('.pf-jersey').value;
+  const ageRaw = formEl.querySelector('.pf-age').value;
+  const heightRaw = formEl.querySelector('.pf-height').value;
+  return {
+    position: formEl.querySelector('.pf-position').value,
+    jerseyNumber: jerseyRaw !== '' ? parseInt(jerseyRaw) : null,
+    age: ageRaw !== '' ? parseInt(ageRaw) : null,
+    height: heightRaw !== '' ? parseInt(heightRaw) : null,
+    favouriteTeam: formEl.querySelector('.pf-team').value.trim(),
+    preferredFoot: formEl.querySelector('.pf-foot').value,
+    nickname: formEl.querySelector('.pf-nickname').value.trim(),
+    bio: formEl.querySelector('.pf-bio').value.trim(),
+    submitted: true
+  };
+}
+
+async function handleMyProfileCreate(formEl){
+  if(!currentUser) return;
+  const nameInput = formEl.querySelector('.pf-name');
+  const name = nameInput.value.trim().toUpperCase();
+  if(!name){ showToast('Enter your name'); return; }
+  if(data.players.some(p => p.name === name)){ showToast('That name is already taken — pick another'); return; }
+
+  const position = formEl.querySelector('.pf-position').value;
+  if(!position){ showToast('Pick a position first'); return; }
+
+  const profile = readProfileFieldsFromForm(formEl);
+
+  try{
+    await setDoc(doc(playersCol, currentUser.uid), { name, profile });
+  }catch(e){
+    showToast('Could not create your profile: ' + e.message);
+    return;
+  }
+
+  creatingMyProfile = false;
+  await loadData();
+  showToast('Profile created!');
 }
 
 function fplCardHtml(r, player){
@@ -1020,7 +1218,7 @@ function fplCardHtml(r, player){
       </div>
       ${footerBits ? `<div class="fpl-footer">${footerBits}</div>` : ''}
       ${pr.bio ? `<div class="fpl-bio">“${escapeHtml(pr.bio)}”</div>` : ''}
-      ${isAdmin ? `<button type="button" class="ghost" data-edit-profile="${player.id}" style="margin-top:8px;">Edit profile</button>` : ''}
+      ${(isAdmin || (currentUser && player.id === currentUser.uid)) ? `<button type="button" class="ghost" data-edit-profile="${player.id}" style="margin-top:8px;">Edit profile</button>` : ''}
     </div>
   `;
 }
@@ -1046,30 +1244,17 @@ async function handleProfileSave(formEl){
   const player = data.players.find(p => p.id === playerId);
   if(!player) return;
 
+  const isOwner = !!(currentUser && player.id === currentUser.uid);
   const wasSubmitted = !!(player.profile && player.profile.submitted);
-  if(wasSubmitted && !isAdmin){
-    showToast('Only admin can edit an existing card');
+  if(wasSubmitted && !isAdmin && !isOwner){
+    showToast('Only admin or the profile owner can edit this card');
     return;
   }
 
   const position = formEl.querySelector('.pf-position').value;
   if(!position){ showToast('Pick a position first'); return; }
 
-  const jerseyRaw = formEl.querySelector('.pf-jersey').value;
-  const ageRaw = formEl.querySelector('.pf-age').value;
-  const heightRaw = formEl.querySelector('.pf-height').value;
-
-  const profile = {
-    position,
-    jerseyNumber: jerseyRaw !== '' ? parseInt(jerseyRaw) : null,
-    age: ageRaw !== '' ? parseInt(ageRaw) : null,
-    height: heightRaw !== '' ? parseInt(heightRaw) : null,
-    favouriteTeam: formEl.querySelector('.pf-team').value.trim(),
-    preferredFoot: formEl.querySelector('.pf-foot').value,
-    nickname: formEl.querySelector('.pf-nickname').value.trim(),
-    bio: formEl.querySelector('.pf-bio').value.trim(),
-    submitted: true
-  };
+  const profile = readProfileFieldsFromForm(formEl);
 
   try{
     await updateDoc(doc(playersCol, playerId), { profile });
@@ -1094,8 +1279,9 @@ function renderPlayerStats(){
     wrap.innerHTML = pendingApprovalHtml();
     return;
   }
+
   if(data.players.length === 0){
-    wrap.innerHTML = '<div class="empty-state"><span class="display">No players yet</span>Add players in the Squad tab to start tracking stats.</div>';
+    wrap.innerHTML = '<div class="empty-state"><span class="display">No players yet</span>Add players in the Profile tab to start tracking stats.</div>';
     return;
   }
   const stats = computePlayerStats();
@@ -1148,22 +1334,34 @@ document.getElementById('playerstats-content').addEventListener('click', (e) => 
   const editBtn = e.target.closest('[data-edit-profile]');
   if(editBtn){
     e.stopPropagation();
-    if(!isAdmin) return;
-    profileEditPlayerId = editBtn.getAttribute('data-edit-profile');
+    const targetId = editBtn.getAttribute('data-edit-profile');
+    const isOwner = !!(currentUser && targetId === currentUser.uid);
+    if(!isAdmin && !isOwner) return;
+    profileEditPlayerId = targetId;
     renderPlayerStats();
     return;
   }
   const cancelBtn = e.target.closest('.pf-cancel');
   if(cancelBtn){
     e.stopPropagation();
-    profileEditPlayerId = null;
+    const formEl = cancelBtn.closest('.profile-form');
+    if(formEl && formEl.dataset.mode === 'create'){
+      creatingMyProfile = false;
+    }else{
+      profileEditPlayerId = null;
+    }
     renderPlayerStats();
     return;
   }
   const saveBtn = e.target.closest('.pf-save');
   if(saveBtn){
     e.stopPropagation();
-    handleProfileSave(saveBtn.closest('.profile-form'));
+    const formEl = saveBtn.closest('.profile-form');
+    if(formEl && formEl.dataset.mode === 'create'){
+      handleMyProfileCreate(formEl);
+    }else{
+      handleProfileSave(formEl);
+    }
     return;
   }
   if(e.target.closest('.profile-form')) return; // don't toggle while interacting with form fields

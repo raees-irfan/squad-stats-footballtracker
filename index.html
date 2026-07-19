@@ -33,7 +33,7 @@
 </header>
 
 <nav>
-  <button data-panel="squad" class="active">Squad</button>
+  <button data-panel="squad" class="active">Profile</button>
   <button data-panel="newmatch">New Match</button>
   <button data-panel="history">History</button>
   <button data-panel="leaderboard">Leaderboard</button>
@@ -43,10 +43,13 @@
 <main>
   <p class="shared-note">Leaderboard's live. Reputations are on the line</p>
 
-  <!-- SQUAD PANEL -->
+  <!-- PROFILE PANEL (still internally called "squad" in the code/ids) -->
   <section class="panel active" id="panel-squad">
-    <h2 class="section-title">Squad</h2>
-    <div class="card">
+    <h2 class="section-title" id="squad-panel-title">Profile</h2>
+
+    <div id="squad-my-profile-section"></div>
+
+    <div class="card" id="admin-add-player-card">
       <label for="new-player-name">Player name (saved in CAPS)</label>
       <input type="text" id="new-player-name" placeholder="PLAYER NAME" style="text-transform:uppercase;">
 
@@ -105,7 +108,10 @@
     <div id="squad-list" class="chip-list"></div>
 
     <div class="card settings-card" id="admin-settings" style="display:none;">
-      <label style="color:var(--pitch-dark);">Users</label>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <label style="color:var(--pitch-dark); margin:0;">Users</label>
+        <button type="button" class="secondary" id="toggle-manage-users-btn" style="width:auto;">Manage users</button>
+      </div>
       <div id="admin-users-list"></div>
       <label style="color:var(--pitch-dark); margin-top:14px;">Feedback</label>
       <div id="admin-feedback-list"></div>
