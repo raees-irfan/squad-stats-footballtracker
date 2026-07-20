@@ -912,13 +912,21 @@ function renderHistory(){
   }
   const sorted = [...data.matches].sort((a,b)=> new Date(b.date) - new Date(a.date));
   wrap.innerHTML = sorted.map(m => {
-    const evLines = m.events.map(e => `
-      <div class="ev-line">
-        <span class="badge ${e.type}">${e.type}</span>
-        ${escapeHtml(playerName(e.playerId))}
-        <span style="color:rgba(22,24,28,0.4); font-size:11px;">(${e.team === 'A' ? escapeHtml(m.teamA.name) : escapeHtml(m.teamB.name)})</span>
-      </div>
-    `).join('') || '<div style="font-size:13px; color:rgba(22,24,28,0.45);">No individual goals/assists logged for this match.</div>';
+    // Aggregate goals and assists per player
+    const playerStats = {};
+    m.events.forEach(e => {
+      if(!playerStats[e.playerId]) playerStats[e.playerId] = { goals: 0, assists: 0 };
+      if(e.type === 'goal') playerStats[e.playerId].goals++;
+      if(e.type === 'assist') playerStats[e.playerId].assists++;
+    });
+
+    const statsLines = Object.entries(playerStats).map(([playerId, stats]) => {
+      const name = escapeHtml(playerName(playerId));
+      const parts = [];
+      if(stats.goals > 0) parts.push(`${stats.goals} goal${stats.goals > 1 ? 's' : ''}`);
+      if(stats.assists > 0) parts.push(`${stats.assists} assist${stats.assists > 1 ? 's' : ''}`);
+      return `<div style="font-size:13px; margin-bottom:4px;">${name}: ${parts.join(', ')}</div>`;
+    }).join('') || '<div style="font-size:13px; color:rgba(22,24,28,0.45);">No goals or assists logged for this match.</div>';
 
     return `
       <div class="card match-card" data-match-toggle="${m.id}">
@@ -933,7 +941,7 @@ function renderHistory(){
           <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">${escapeHtml(m.teamB.name)} squad</div>
           <div style="font-size:13px; margin-bottom:10px;">${m.teamB.players.map(playerName).map(escapeHtml).join(', ')}</div>
           <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">Goals &amp; assists</div>
-          ${evLines}
+          ${statsLines}
           ${isAdmin ? `
             <div style="display:flex; gap:8px; margin-top:8px;">
               <button class="ghost" data-edit-match="${m.id}">Edit this match</button>
@@ -1055,13 +1063,92 @@ function renderLeaderboard(){
   `;
 }
 
-/* ---------- Player profiles ---------- */
+/* ---------- Player profiles & FPL-style card ratings ---------- */
+const RATING_BASE = 60;
+
 const POSITION_META = {
   GK:  { label: 'GK',  full: 'Goalkeeper', color: 'var(--amber)' },
   DEF: { label: 'DEF', full: 'Defender',   color: 'var(--turf)' },
   MID: { label: 'MID', full: 'Midfielder', color: 'var(--pitch-dark)' },
   FWD: { label: 'FWD', full: 'Forward',    color: 'var(--red)' }
 };
+
+const POSITION_WEIGHTS = {
+  GK:  { finishing: 0.10, passing: 0.20, defending: 0.70 },
+  DEF: { finishing: 0.15, passing: 0.25, defending: 0.60 },
+  MID: { finishing: 0.30, passing: 0.40, defending: 0.30 },
+  FWD: { finishing: 0.55, passing: 0.25, defending: 0.20 }
+};
+const DEFAULT_WEIGHTS = { finishing: 0.34, passing: 0.33, defending: 0.33 };
+
+function attackTier(avgPerMatch){
+  if(avgPerMatch >= 5) return { key: 't5', min: 95, max: 99 };
+  if(avgPerMatch >= 3) return { key: 't3', min: 90, max: 94 };
+  if(avgPerMatch >= 2) return { key: 't2', min: 80, max: 89 };
+  if(avgPerMatch >= 1) return { key: 't1', min: 70, max: 79 };
+  return { key: 't0', min: RATING_BASE, max: RATING_BASE };
+}
+
+function defendTier(matches, isGK = false){
+  const base = isGK ? 70 : RATING_BASE; // Goalkeepers get higher base
+  if(matches === 0) return { key: 'd0', min: base, max: base };
+  if(matches >= 20) return { key: 'd3', min: isGK ? 90 : 85, max: isGK ? 97 : 92 };
+  if(matches >= 10) return { key: 'd2', min: isGK ? 82 : 75, max: isGK ? 89 : 84 };
+  if(matches >= 5) return { key: 'd1', min: isGK ? 75 : 65, max: isGK ? 84 : 74 };
+  return { key: 'd0', min: base, max: base };
+}
+
+function rollInRange(min, max){
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function ensurePlayerRatings(player, statRow){
+  if(!player.ratings) player.ratings = {};
+  let dirty = false;
+  const matches = statRow ? statRow.matches : 0;
+  const avgGoals = matches ? statRow.goals / matches : 0;
+  const avgAssists = matches ? statRow.assists / matches : 0;
+  const isGK = player.profile && player.profile.position === 'GK';
+
+  const tiers = {
+    finishing: attackTier(avgGoals),
+    passing: attackTier(avgAssists),
+    defending: defendTier(matches, isGK)
+  };
+
+  Object.keys(tiers).forEach(cat => {
+    const tier = tiers[cat];
+    const existing = player.ratings[cat];
+    if(!existing || existing.tierKey !== tier.key){
+      player.ratings[cat] = { tierKey: tier.key, value: rollInRange(tier.min, tier.max) };
+      dirty = true;
+    }
+  });
+  return dirty;
+}
+
+function getPlayerRatingValues(player){
+  const r = player.ratings || {};
+  return {
+    finishing: r.finishing ? r.finishing.value : RATING_BASE,
+    passing: r.passing ? r.passing.value : RATING_BASE,
+    defending: r.defending ? r.defending.value : RATING_BASE
+  };
+}
+
+function computeOverall(player){
+  const vals = getPlayerRatingValues(player);
+  const pos = player.profile && player.profile.position;
+  
+  // For goalkeepers, use their highest stat as overall
+  if(pos === 'GK'){
+    return Math.max(vals.finishing, vals.passing, vals.defending);
+  }
+  
+  // For other positions, use weighted average
+  const w = POSITION_WEIGHTS[pos] || DEFAULT_WEIGHTS;
+  return Math.round(vals.finishing * w.finishing + vals.passing * w.passing + vals.defending * w.defending);
+}
 
 /* Which player's card is expanded, and which player's profile form (if any)
    is currently open, in the Player Stats panel. */
@@ -1286,16 +1373,33 @@ function renderPlayerStats(){
   }
   const stats = computePlayerStats();
 
-  const rows = Object.values(stats)
-    .map(r => ({ r, player: data.players.find(p => p.id === r.id) || { id: r.id, name: r.name } }))
-    .sort((a, b) => b.r.points - a.r.points || a.r.name.localeCompare(b.r.name));
+  let dirty = false;
+  data.players.forEach(p => {
+    if(ensurePlayerRatings(p, stats[p.id])) dirty = true;
+  });
+  if(dirty){
+    data.players.forEach(p => {
+      if(p.ratings){
+        updateDoc(doc(playersCol, p.id), { ratings: p.ratings }).catch(() => {});
+      }
+    });
+  }
 
-  wrap.innerHTML = rows.map(({ r, player }) => {
+  const rows = Object.values(stats)
+    .map(r => {
+      const player = data.players.find(p => p.id === r.id) || { id: r.id, name: r.name };
+      return { r, player, overall: computeOverall(player) };
+    })
+    .sort((a, b) => b.overall - a.overall || b.r.points - a.r.points || a.r.name.localeCompare(b.r.name));
+
+  wrap.innerHTML = rows.map(({ r, player, overall }) => {
     const expanded = expandedPlayerId === r.id;
     const posMeta = player.profile && player.profile.position ? POSITION_META[player.profile.position] : null;
     const posBadge = posMeta
       ? `<span class="pos-badge" style="background:${posMeta.color};">${posMeta.label}</span>`
       : `<span class="pos-badge pos-badge--empty">SET UP</span>`;
+
+    const ratings = getPlayerRatingValues(player);
 
     return `
       <div class="card player-row" data-player-toggle="${r.id}">
@@ -1306,9 +1410,10 @@ function renderPlayerStats(){
             ${posBadge}
           </div>
           <div class="player-row-stats">
-            <div class="ovr-block"><span>${r.points}</span>PTS</div>
-            <div><span>${r.goals}</span>G</div>
-            <div><span>${r.assists}</span>A</div>
+            <div class="ovr-block"><span>${overall}</span>OVR</div>
+            <div><span>${ratings.finishing}</span>FIN</div>
+            <div><span>${ratings.passing}</span>PAS</div>
+            <div><span>${ratings.defending}</span>DEF</div>
             <div><span>${r.matches}</span>MP</div>
           </div>
         </div>
