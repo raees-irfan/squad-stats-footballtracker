@@ -4,6 +4,7 @@ import { playersCol, doc, updateDoc } from './firebase.js';
 import { escapeHtml, showToast } from './utils.js';
 import { PLAYER_PHOTOS } from './constants.js';
 import { loadData } from './data.js';
+import { isMyPlayer } from './ownership.js';
 
 export function getPlayerPhoto(player){
   if(!player) return null;
@@ -47,7 +48,11 @@ function readAndResizeImage(file, maxDim = 200, quality = 0.75){
 }
 
 export function triggerPhotoUpload(playerId){
-  if(!state.isAdmin){ showToast('Admin only'); return; }
+  const player = state.data.players.find(p => p.id === playerId);
+  if(!state.isAdmin && !isMyPlayer(player)){
+    showToast('You can only change your own photo');
+    return;
+  }
   state.photoUploadTargetId = playerId;
   document.getElementById('photo-upload-input').click();
 }

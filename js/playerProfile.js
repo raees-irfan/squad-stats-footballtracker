@@ -9,6 +9,7 @@ import { computePlayerStats } from './stats.js';
 import { ensurePlayerRatings, getPlayerRatingValues, computeOverall } from './ratings.js';
 import { canViewData } from './auth.js';
 import { pendingApprovalHtml } from './data.js';
+import { isMyPlayer } from './ownership.js';
 
 /* Which player's card is expanded, and which player's profile form (if any)
    is currently open, in the Player Stats panel — lives in shared state
@@ -164,7 +165,7 @@ function fplCardHtml(r, player){
       </div>
       ${footerBits ? `<div class="fpl-footer">${footerBits}</div>` : ''}
       ${pr.bio ? `<div class="fpl-bio">“${escapeHtml(pr.bio)}”</div>` : ''}
-      ${(state.isAdmin || (state.currentUser && player.id === state.currentUser.uid)) ? `<button type="button" class="ghost" data-edit-profile="${player.id}" style="margin-top:8px;">Edit profile</button>` : ''}
+      ${(state.isAdmin || isMyPlayer(player)) ? `<button type="button" class="ghost" data-edit-profile="${player.id}" style="margin-top:8px;">Edit profile</button>` : ''}
     </div>
   `;
 }
@@ -190,7 +191,7 @@ export async function handleProfileSave(formEl){
   const player = state.data.players.find(p => p.id === playerId);
   if(!player) return;
 
-  const isOwner = !!(state.currentUser && player.id === state.currentUser.uid);
+  const isOwner = isMyPlayer(player);
   const wasSubmitted = !!(player.profile && player.profile.submitted);
   if(wasSubmitted && !state.isAdmin && !isOwner){
     showToast('Only admin or the profile owner can edit this card');
@@ -263,7 +264,7 @@ export function renderPlayerStats(){
     return `
       <div class="card player-row" data-player-toggle="${r.id}">
         <div class="player-row-top">
-          <span ${state.isAdmin ? `data-photo-player="${r.id}" title="Tap to change photo" style="cursor:pointer; display:inline-flex;"` : 'style="display:inline-flex;"'}>${avatarHtml(player, 40)}</span>
+          <span ${(state.isAdmin || isMyPlayer(player)) ? `data-photo-player="${r.id}" title="Tap to change photo" style="cursor:pointer; display:inline-flex;"` : 'style="display:inline-flex;"'}>${avatarHtml(player, 40)}</span>
           <div class="player-row-mid">
             <div class="player-row-name">${escapeHtml(r.name)}</div>
             ${posBadge}
@@ -300,8 +301,8 @@ export function initPlayerStats(){
     if(editBtn){
       e.stopPropagation();
       const targetId = editBtn.getAttribute('data-edit-profile');
-      const isOwner = !!(state.currentUser && targetId === state.currentUser.uid);
-      if(!state.isAdmin && !isOwner) return;
+      const targetPlayer = state.data.players.find(p => p.id === targetId);
+      if(!state.isAdmin && !isMyPlayer(targetPlayer)) return;
       state.profileEditPlayerId = targetId;
       renderPlayerStats();
       return;

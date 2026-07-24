@@ -18,6 +18,7 @@ import { matchesCol, doc, updateDoc } from './firebase.js';
 import { escapeHtml, showToast, showModal } from './utils.js';
 import { computePlayerStats } from './stats.js';
 import { loadData } from './data.js';
+import { getMyOwnedPlayerId } from './ownership.js';
 
 const VOTES_TO_CLOSE = 10;
 
@@ -29,14 +30,7 @@ function nameOf(id){
 /* A player is "owned by" the current user if either their profile doc ID
    IS the user's uid (self-service creation), or an admin has explicitly
    linked an existing player to that user's account via ownerUid. */
-export function getMyOwnedPlayerId(){
-  if(!state.currentUser) return null;
-  const uid = state.currentUser.uid;
-  const direct = state.data.players.find(p => p.id === uid);
-  if(direct) return direct.id;
-  const linked = state.data.players.find(p => p.ownerUid === uid);
-  return linked ? linked.id : null;
-}
+export { getMyOwnedPlayerId };
 
 function isInMatch(match, playerId){
   return !!playerId && (match.teamA.players.includes(playerId) || match.teamB.players.includes(playerId));
