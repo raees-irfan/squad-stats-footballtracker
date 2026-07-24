@@ -1,11 +1,11 @@
 :root{
-    --pitch-dark:#0F3D2E;
-    --turf:#1C5C3F;
-    --chalk:#F5F1E6;
-    --amber:#E8A33D;
-    --ink:#16181C;
-    --card:#FBF8F0;
-    --line:rgba(15,61,46,0.16);
+    --pitch-dark:#1C2B3A;
+    --turf:#3D5C70;
+    --chalk:#E9EEF2;
+    --amber:#6FA8CB;
+    --ink:#12181D;
+    --card:#F4F7F9;
+    --line:rgba(28,43,58,0.16);
     --red:#B5473A;
   }
   *{box-sizing:border-box;}
@@ -59,6 +59,7 @@
     border-radius:6px;
     padding:16px 20px;
     display:flex;
+    flex-wrap:wrap;
     align-items:center;
     justify-content:space-between;
     gap:12px;
@@ -349,7 +350,7 @@
     font-family:'Space Mono', monospace;
     text-transform:uppercase;
   }
-  .badge.goal{background:rgba(232,163,61,0.2); color:#93641f;}
+  .badge.goal{background:rgba(111,168,203,0.2); color:#1F4A63;}
   .badge.assist{background:rgba(28,92,63,0.15); color:var(--turf);}
 
   .toast{
@@ -394,7 +395,7 @@
     background:rgba(255,255,255,0.08);
     color:var(--chalk);
   }
-  .admin-bar input::placeholder{color:rgba(245,241,230,0.45);}
+  .admin-bar input::placeholder{color:rgba(233,238,242,0.45);}
   .admin-btn{
     background:rgba(255,255,255,0.08);
     border:1px solid rgba(255,255,255,0.2);
@@ -422,21 +423,21 @@
     align-items:center;
     justify-content:space-between;
     gap:10px;
-    background:rgba(232,163,61,0.12);
+    background:rgba(111,168,203,0.12);
     border:1px dashed var(--amber);
     border-radius:6px;
     padding:10px 12px;
     margin-bottom:12px;
     font-family:'Space Mono', monospace;
     font-size:12px;
-    color:#93641f;
+    color:#1F4A63;
   }
   .edit-banner button{padding:2px 6px;}
 
   /* Custom modal (replaces browser prompt/confirm, which the artifact sandbox can block) */
   .modal-overlay{
     position:fixed; inset:0; z-index:300;
-    background:rgba(15,61,46,0.55);
+    background:rgba(28,43,58,0.55);
     display:none;
     align-items:center; justify-content:center;
     padding:20px;
@@ -661,8 +662,8 @@
     display:flex; justify-content:center; gap:20px;
     margin:12px 0;
     padding:10px 0;
-    border-top:1px dashed rgba(245,241,230,0.25);
-    border-bottom:1px dashed rgba(245,241,230,0.25);
+    border-top:1px dashed rgba(233,238,242,0.25);
+    border-bottom:1px dashed rgba(233,238,242,0.25);
   }
   .fpl-attrs div{
     display:flex; flex-direction:column; align-items:center;
@@ -670,7 +671,7 @@
     font-size:10px;
     text-transform:uppercase;
     letter-spacing:0.05em;
-    color:rgba(245,241,230,0.6);
+    color:rgba(233,238,242,0.6);
   }
   .fpl-attrs span{
     font-family:'Space Mono', monospace;
@@ -686,7 +687,7 @@
   .fpl-secondary-stats div{
     display:flex; flex-direction:column; align-items:center;
     font-size:10px; text-transform:uppercase;
-    color:rgba(245,241,230,0.55);
+    color:rgba(233,238,242,0.55);
     font-family:'Space Mono', monospace;
   }
   .fpl-secondary-stats span{
@@ -696,13 +697,13 @@
   .fpl-footer{
     display:flex; flex-wrap:wrap; justify-content:center; gap:10px;
     font-size:11px;
-    color:rgba(245,241,230,0.75);
+    color:rgba(233,238,242,0.75);
     font-family:'Work Sans', sans-serif;
     margin-bottom:6px;
   }
   .fpl-bio{
     font-size:12px; font-style:italic;
-    color:rgba(245,241,230,0.6);
+    color:rgba(233,238,242,0.6);
     margin-top:4px;
   }
   .fpl-card [data-edit-profile]{

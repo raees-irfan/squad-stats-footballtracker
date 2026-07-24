@@ -55,7 +55,7 @@ export function renderLeaderboard(){
       </tbody>
     </table>
     <div style="font-size:11px; color:rgba(22,24,28,0.45); margin-top:8px;">
-      Points: goal = ${POINTS.GOAL} · assist = ${POINTS.ASSIST}
+      Points: goal = ${POINTS.GOAL} · assist = ${POINTS.ASSIST} · team win = ${POINTS.WIN} · match MVP = ${POINTS.MVP}
     </div>
   `;
 }

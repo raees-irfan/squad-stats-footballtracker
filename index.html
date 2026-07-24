@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Matchday — Football Stats Tracker</title>
+<title>Statgalore — Football Stats Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
  <link rel="stylesheet" href="style.css" />
@@ -14,7 +14,7 @@
 
 <header>
   <div class="brand">
-    <h1>MATCHDAY</h1>
+    <h1>STATGALORE</h1>
   </div>
   <div class="tag" style="text-align:center; margin-top:2px;">squad stats tracker</div>
   <div id="scoreboard" class="scoreboard empty">Log your first match to see it here</div>
@@ -29,7 +29,7 @@
     <button class="admin-btn" id="feedback-btn" style="display:none;">Send feedback</button>
     <button class="admin-btn" id="auth-signout-btn">Sign out</button>
   </div>
-  <div style="text-align:center; font-family:'Space Mono',monospace; font-size:10px; color:rgba(245,241,230,0.4); margin-top:6px;">Sign in, then wait for an admin to approve your account. Admins can log matches.</div>
+  <div style="text-align:center; font-family:'Space Mono',monospace; font-size:10px; color:rgba(233,238,242,0.4); margin-top:6px;">Sign in, then wait for an admin to approve your account. Admins can log matches.</div>
 </header>
 
 <nav>
@@ -105,14 +105,23 @@
 
       <button class="primary" id="add-player-btn">Add player</button>
     </div>
+
+    <div id="squad-list-header" style="display:none; justify-content:space-between; align-items:center; gap:8px; margin-top:16px;">
+      <label style="color:var(--pitch-dark); margin:0;">Squad</label>
+      <button type="button" class="secondary" id="toggle-manage-players-btn" style="width:auto;">Manage player profiles</button>
+    </div>
     <div id="squad-list" class="chip-list"></div>
+    <div id="squad-link-panel"></div>
 
     <div class="card settings-card" id="admin-settings" style="display:none;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
         <label style="color:var(--pitch-dark); margin:0;">Users</label>
-        <button type="button" class="secondary" id="toggle-manage-users-btn" style="width:auto;">Manage users</button>
+        <div style="display:flex; gap:6px;">
+          <button type="button" class="secondary" id="toggle-users-list-btn" style="width:auto;">Show users</button>
+          <button type="button" class="secondary" id="toggle-manage-users-btn" style="width:auto;">Manage users</button>
+        </div>
       </div>
-      <div id="admin-users-list"></div>
+      <div id="admin-users-list" style="display:none;"></div>
       <label style="color:var(--pitch-dark); margin-top:14px;">Feedback</label>
       <div id="admin-feedback-list"></div>
     </div>

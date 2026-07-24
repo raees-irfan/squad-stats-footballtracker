@@ -1,7 +1,9 @@
 /* ---------- Points ---------- */
 export const POINTS = {
-  GOAL: 5,
-  ASSIST: 3
+  GOAL: 2,
+  ASSIST: 1,
+  MVP: 3,
+  WIN: 4
 };
 
 /* ---------- Hardcoded player photos ----------

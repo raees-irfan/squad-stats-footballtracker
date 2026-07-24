@@ -219,12 +219,25 @@ export function initMatch(){
     });
 
     const isEditing = !!state.editingMatchId;
+    // Preserve any existing votes/MVP data when an admin edits a match -
+    // correcting a score typo shouldn't wipe out an in-progress or already
+    // decided MVP poll. New matches start with an empty, open poll.
+    const existing = isEditing ? state.data.matches.find(m => m.id === state.editingMatchId) : null;
     const match = {
       date,
       teamA: { name: teamAName, players: idsA },
       teamB: { name: teamBName, players: idsB },
       scoreA, scoreB,
-      events
+      events,
+      votes: (existing && existing.votes) || {},
+      pollClosed: existing ? !!existing.pollClosed : false,
+      mvpPlayerId: existing ? (existing.mvpPlayerId || null) : null,
+      // The `date` field is just a day (no time), so two matches logged on
+      // the same day are indistinguishable by date alone - createdAt is
+      // what actually lets "most recent" mean "most recently logged" and
+      // not just an arbitrary Firestore read order. Preserved on edits so
+      // editing an old match doesn't make it act newer than it is.
+      createdAt: existing ? (existing.createdAt || Date.now()) : Date.now()
     };
 
     try{

@@ -28,9 +28,22 @@ export function initFeedback(){
     }
   });
 
+  document.getElementById('toggle-users-list-btn').addEventListener('click', () => {
+    state.showUsersList = !state.showUsersList;
+    document.getElementById('admin-users-list').style.display = state.showUsersList ? 'block' : 'none';
+    document.getElementById('toggle-users-list-btn').textContent = state.showUsersList ? 'Hide users' : 'Show users';
+  });
+
   document.getElementById('toggle-manage-users-btn').addEventListener('click', () => {
     state.showManageUsers = !state.showManageUsers;
     document.getElementById('toggle-manage-users-btn').textContent = state.showManageUsers ? 'Hide user management' : 'Manage users';
+    // Turning management mode on is pointless if the list is collapsed -
+    // expand it automatically so the promote/remove buttons are visible.
+    if(state.showManageUsers && !state.showUsersList){
+      state.showUsersList = true;
+      document.getElementById('admin-users-list').style.display = 'block';
+      document.getElementById('toggle-users-list-btn').textContent = 'Hide users';
+    }
     renderAdminUsers();
   });
 

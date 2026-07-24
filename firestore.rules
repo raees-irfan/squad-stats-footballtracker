@@ -64,7 +64,27 @@ service cloud.firestore {
 
     match /matches/{matchId} {
       allow read: if isApproved() || isAdmin();
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+
+      // Admins can edit anything (teams, score, events, votes, all of it).
+      // A non-admin, approved user may ONLY do one narrow thing: touch the
+      // `votes` map, and only their own key in it (request.auth.uid) - they
+      // can't rewrite anyone else's vote or touch score/teams/events at all.
+      // They're also allowed to flip pollClosed -> true / set mvpPlayerId,
+      // but only once the vote count has actually reached 10 - that's what
+      // lets the *voter whose vote hits #10* close the poll and record the
+      // winner in the same write, without a backend function.
+      // NOTE: this does not verify the mvpPlayerId is the *correct* winner
+      // by tiebreak rules - that logic lives client-side only. For a small
+      // trusted-friends app that's an acceptable trade-off; true tamper-proof
+      // scoring would need a Cloud Function.
+      allow update: if isAdmin() || (
+        isApproved() &&
+        resource.data.pollClosed != true &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'pollClosed', 'mvpPlayerId']) &&
+        request.resource.data.votes.diff(resource.data.votes).affectedKeys().hasOnly([request.auth.uid]) &&
+        (request.resource.data.pollClosed != true || request.resource.data.votes.size() >= 10)
+      );
     }
 
     // Feedback creation isn't approval-gated - it's harmless (no data
