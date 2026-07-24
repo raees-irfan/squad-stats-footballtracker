@@ -53,12 +53,18 @@ service cloud.firestore {
     match /players/{playerId} {
       allow read: if isApproved() || isAdmin();
       // Admins can create/edit any player. A signed-in, approved user can
-      // additionally create/edit ONLY the player doc whose ID equals their
-      // own auth uid - that's how "one profile per user" is enforced: the
-      // doc ID *is* the uid, so there's structurally nowhere else for a
-      // second profile to live.
+      // additionally create/edit a player doc if EITHER:
+      //  - its ID equals their own auth uid (self-service creation - the
+      //    ID *is* the uid, so "one profile per user" is structural), OR
+      //  - its ownerUid field equals their uid (an admin manually linked
+      //    an existing, admin-created player record to their account).
+      // Both cases mean "this is genuinely their own profile" - the second
+      // just covers players that existed before self-service did.
       allow create: if isAdmin() || (isApproved() && request.auth.uid == playerId);
-      allow update: if isAdmin() || (isApproved() && request.auth.uid == playerId);
+      allow update: if isAdmin() || (
+        isApproved() &&
+        (request.auth.uid == playerId || ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid))
+      );
       allow delete: if isAdmin();
     }
 
@@ -74,6 +80,14 @@ service cloud.firestore {
       // but only once the vote count has actually reached 10 - that's what
       // lets the *voter whose vote hits #10* close the poll and record the
       // winner in the same write, without a backend function.
+      // The `!('votes' in resource.data) ? ... : ...` branch exists because
+      // matches logged BEFORE the MVP feature existed have no `votes` field
+      // at all - calling .diff() against a genuinely missing field errors
+      // out the whole rule (fails closed), which is exactly the "missing
+      // or insufficient permissions" bug this fixes. When votes doesn't
+      // exist yet, this is necessarily someone's very first vote on this
+      // match, so it only needs to check the new map contains nothing but
+      // their own key.
       // NOTE: this does not verify the mvpPlayerId is the *correct* winner
       // by tiebreak rules - that logic lives client-side only. For a small
       // trusted-friends app that's an acceptable trade-off; true tamper-proof
@@ -82,7 +96,11 @@ service cloud.firestore {
         isApproved() &&
         resource.data.pollClosed != true &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'pollClosed', 'mvpPlayerId']) &&
-        request.resource.data.votes.diff(resource.data.votes).affectedKeys().hasOnly([request.auth.uid]) &&
+        (
+          !('votes' in resource.data)
+            ? request.resource.data.votes.keys().hasOnly([request.auth.uid])
+            : request.resource.data.votes.diff(resource.data.votes).affectedKeys().hasOnly([request.auth.uid])
+        ) &&
         (request.resource.data.pollClosed != true || request.resource.data.votes.size() >= 10)
       );
     }
