@@ -84,12 +84,35 @@ export function renderSquad(){
     <div class="chip" style="display:inline-flex; align-items:center; gap:8px;">
       <span ${state.isAdmin ? `data-photo-player="${p.id}" title="Tap to change photo" style="cursor:pointer; display:inline-flex;"` : 'style="display:inline-flex;"'}>${avatarHtml(p, 26)}</span>
       ${escapeHtml(p.name)}
-      ${canManagePlayers ? `<button type="button" class="ghost" data-link-player="${p.id}" style="font-size:11px; padding:2px 6px;">${p.ownerUid ? 'Linked ✓' : 'Link to user'}</button>` : ''}
+      ${canManagePlayers ? `<span data-link-slot="${p.id}">${p.ownerUid ? `<button type="button" class="ghost" data-link-player="${p.id}" style="font-size:11px; padding:2px 6px;">Linked ✓</button>` : `<button type="button" class="ghost" data-link-player="${p.id}" style="font-size:11px; padding:2px 6px;">Link to user</button>`}</span>` : ''}
       ${canManagePlayers ? `<button data-remove-player="${p.id}" title="Remove player">×</button>` : ''}
     </div>
   `).join('');
 
+  if(canManagePlayers) markSelfLinkedChips();
   renderLinkPanel();
+}
+
+/* Self-created profiles (id === their own uid) are already "linked" in
+   every functional sense - there's just no ownerUid field to check for
+   them, since that field only exists for the admin-linking path. Without
+   this pass, self-created players would misleadingly show "Link to user"
+   even though nothing needs to be done for them. */
+async function markSelfLinkedChips(){
+  let users = [];
+  try{
+    const snap = await getDocs(usersCol);
+    users = snap.docs.map(d => d.id);
+  }catch(e){
+    return; // non-critical - chips just keep showing the default label
+  }
+  const userIds = new Set(users);
+  state.data.players.forEach(p => {
+    if(p.ownerUid) return; // already handled by the ownerUid branch above
+    if(!userIds.has(p.id)) return; // not a self-created profile
+    const slot = document.querySelector(`[data-link-slot="${p.id}"]`);
+    if(slot) slot.innerHTML = '';
+  });
 }
 
 /* Which signed-up user (if any) a player is linked to determines who can
