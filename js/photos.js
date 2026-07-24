@@ -17,7 +17,7 @@ export function avatarHtml(player, size){
     return `<img src="${escapeHtml(photo)}" alt="${escapeHtml(player.name)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block;flex-shrink:0;">`;
   }
   const fontSize = Math.round(size * 0.38);
-  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--turf, #2f6b3c);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:${fontSize}px;font-weight:700;flex-shrink:0;">${initials}</div>`;
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--turf, #3D5C70);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:${fontSize}px;font-weight:700;flex-shrink:0;">${initials}</div>`;
 }
 
 function readAndResizeImage(file, maxDim = 200, quality = 0.75){

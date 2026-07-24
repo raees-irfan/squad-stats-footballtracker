@@ -8,7 +8,10 @@ export const state = {
   isAdmin: false,
   photoUploadTargetId: null,
   showManageUsers: false,
+  showUsersList: false,
+  showManagePlayers: false,
   creatingMyProfile: false,
+  linkingPlayerId: null,
   editingMatchId: null,
   expandedPlayerId: null,
   profileEditPlayerId: null

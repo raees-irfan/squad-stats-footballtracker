@@ -5,10 +5,22 @@ import { matchesCol, doc, deleteDoc } from './firebase.js';
 import { canViewData } from './auth.js';
 import { pendingApprovalHtml, loadData } from './data.js';
 import { enterEditMode } from './match.js';
+import { mvpSectionHtml, initMvpVoting } from './mvp.js';
 
 export function playerName(id){
   const p = state.data.players.find(p => p.id === id);
   return p ? p.name : '(removed player)';
+}
+
+/* Repeats an emoji once per count, up to a cap - past that it switches to
+   a compact "emoji ×N" form so a big match doesn't overflow the card. */
+function emojiBadges(emoji, count){
+  if(count <= 0) return '';
+  const CAP = 6;
+  if(count <= CAP){
+    return Array(count).fill(emoji).join(' ');
+  }
+  return `${emoji} ×${count}`;
 }
 
 export function renderHistory(){
@@ -25,7 +37,7 @@ export function renderHistory(){
     wrap.innerHTML = '<div class="empty-state"><span class="display">No matches yet</span>Log your first match and it will show up here.</div>';
     return;
   }
-  const sorted = [...state.data.matches].sort((a,b)=> new Date(b.date) - new Date(a.date));
+  const sorted = [...state.data.matches].sort((a,b)=> (new Date(b.date) - new Date(a.date)) || ((b.createdAt||0) - (a.createdAt||0)));
   wrap.innerHTML = sorted.map(m => {
     // Aggregate goals and assists per player
     const playerStats = {};
@@ -37,10 +49,10 @@ export function renderHistory(){
 
     const statsLines = Object.entries(playerStats).map(([playerId, stats]) => {
       const name = escapeHtml(playerName(playerId));
-      const parts = [];
-      if(stats.goals > 0) parts.push(`${stats.goals} goal${stats.goals > 1 ? 's' : ''}`);
-      if(stats.assists > 0) parts.push(`${stats.assists} assist${stats.assists > 1 ? 's' : ''}`);
-      return `<div style="font-size:13px; margin-bottom:4px;">${name}: ${parts.join(', ')}</div>`;
+      const goalBadges = emojiBadges('⚽', stats.goals);
+      const assistBadges = emojiBadges('🅰️', stats.assists);
+      const sep = (goalBadges && assistBadges) ? '<span style="color:rgba(22,24,28,0.35); margin:0 6px;">|</span>' : '';
+      return `<div style="font-size:13px; margin-bottom:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><span>${name}:</span><span style="font-size:15px; line-height:1;">${goalBadges}${sep}${assistBadges}</span></div>`;
     }).join('') || '<div style="font-size:13px; color:rgba(22,24,28,0.45);">No goals or assists logged for this match.</div>';
 
     return `
@@ -50,6 +62,7 @@ export function renderHistory(){
           <div class="mc-score">${m.scoreA} – ${m.scoreB}</div>
         </div>
         <div class="mc-date">${formatDate(m.date)} · tap for details</div>
+        ${(m.pollClosed && m.mvpPlayerId) ? `<div style="font-size:12px; font-weight:600; color:#0F2A38; background:var(--amber); display:inline-block; padding:2px 10px; border-radius:10px; margin-top:6px;">🏆 Match MVP: ${escapeHtml(playerName(m.mvpPlayerId))}</div>` : ''}
         <div class="match-detail" id="detail-${m.id}">
           <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">${escapeHtml(m.teamA.name)} squad</div>
           <div style="font-size:13px; margin-bottom:10px;">${m.teamA.players.map(playerName).map(escapeHtml).join(', ')}</div>
@@ -57,6 +70,7 @@ export function renderHistory(){
           <div style="font-size:13px; margin-bottom:10px;">${m.teamB.players.map(playerName).map(escapeHtml).join(', ')}</div>
           <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">Goals &amp; assists</div>
           ${statsLines}
+          ${mvpSectionHtml(m)}
           ${state.isAdmin ? `
             <div style="display:flex; gap:8px; margin-top:8px;">
               <button class="ghost" data-edit-match="${m.id}">Edit this match</button>
@@ -70,7 +84,9 @@ export function renderHistory(){
 }
 
 export function initHistory(){
-  document.getElementById('history-list').addEventListener('click', async (e) => {
+  const historyList = document.getElementById('history-list');
+  initMvpVoting(historyList);
+  historyList.addEventListener('click', async (e) => {
     const editBtn = e.target.closest('[data-edit-match]');
     if(editBtn){
       e.stopPropagation();
