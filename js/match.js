@@ -5,6 +5,7 @@ import { avatarHtml } from './photos.js';
 import { matchesCol, doc, addDoc, setDoc } from './firebase.js';
 import { loadData } from './data.js';
 import { switchPanel } from './nav.js';
+import { POINTS } from './constants.js';
 
 export function renderPlayerPicks(){
   const a = document.getElementById('pickA');
@@ -18,6 +19,7 @@ export function renderPlayerPicks(){
   b.innerHTML = state.data.players.map(p => pickLabel(p, 'B')).join('');
   syncPickAvailability();
   renderGoalAssistInputs();
+  renderBestDefenderSelects();
 }
 function pickLabel(p, team){
   return `<label><input type="checkbox" value="${p.id}" data-team="${team}" class="pick-cb"> ${escapeHtml(p.name)}</label>`;
@@ -27,6 +29,7 @@ function updatePickStyles(e){
   if(label) label.classList.toggle('picked', e.target.checked);
   syncPickAvailability();
   renderGoalAssistInputs();
+  renderBestDefenderSelects();
 }
 
 /* A player picked for one team can't also be picked for the other team */
@@ -91,6 +94,56 @@ function renderGoalAssistInputs(){
   wrap.innerHTML = rowsFor(idsA, teamAName) + rowsFor(idsB, teamBName);
 }
 
+/* ---------- Best Defender (admin picks 1st/2nd/3rd from anyone in the match) ---------- */
+function getAllPickedIds(){
+  return [...getPickedIds('A'), ...getPickedIds('B')];
+}
+
+function readCurrentBestDefenderValues(){
+  const first = document.getElementById('bd-1st');
+  const second = document.getElementById('bd-2nd');
+  const third = document.getElementById('bd-3rd');
+  return {
+    first: first ? first.value : '',
+    second: second ? second.value : '',
+    third: third ? third.value : ''
+  };
+}
+
+function bestDefenderOptionsHtml(allIds, selectedId){
+  return '<option value="">None</option>' + state.data.players
+    .filter(p => allIds.includes(p.id))
+    .map(p => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(p.name)}</option>`)
+    .join('');
+}
+
+export function renderBestDefenderSelects(){
+  const wrap = document.getElementById('best-defender-section');
+  if(!wrap) return;
+  const allIds = getAllPickedIds();
+
+  if(allIds.length === 0){
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const prev = readCurrentBestDefenderValues();
+  wrap.innerHTML = `
+    <div class="row2">
+      <div>
+        <label>1st (+${POINTS.BEST_DEFENDER_1ST} pts)</label>
+        <select id="bd-1st">${bestDefenderOptionsHtml(allIds, prev.first)}</select>
+      </div>
+      <div>
+        <label>2nd (+${POINTS.BEST_DEFENDER_2ND} pts)</label>
+        <select id="bd-2nd">${bestDefenderOptionsHtml(allIds, prev.second)}</select>
+      </div>
+    </div>
+    <label>3rd (+${POINTS.BEST_DEFENDER_3RD} pts)</label>
+    <select id="bd-3rd">${bestDefenderOptionsHtml(allIds, prev.third)}</select>
+  `;
+}
+
 export function resetMatchForm(){
   document.getElementById('teamA-name').value = 'Team A';
   document.getElementById('teamB-name').value = 'Team B';
@@ -100,6 +153,7 @@ export function resetMatchForm(){
   document.querySelectorAll('.pick-cb').forEach(cb => { cb.checked = false; cb.closest('label').classList.remove('picked'); });
   syncPickAvailability();
   renderGoalAssistInputs();
+  renderBestDefenderSelects();
 }
 
 /* ---------- Editing an existing match (admin only) ---------- */
@@ -122,6 +176,10 @@ export function enterEditMode(match){
   });
   syncPickAvailability();
   renderGoalAssistInputs();
+  renderBestDefenderSelects();
+  document.getElementById('bd-1st').value = match.bestDefender1st || '';
+  document.getElementById('bd-2nd').value = match.bestDefender2nd || '';
+  document.getElementById('bd-3rd').value = match.bestDefender3rd || '';
 
   const counts = {};
   match.events.forEach(ev => {
@@ -208,6 +266,15 @@ export function initMatch(){
       return;
     }
 
+    const bd1 = document.getElementById('bd-1st')?.value || null;
+    const bd2 = document.getElementById('bd-2nd')?.value || null;
+    const bd3 = document.getElementById('bd-3rd')?.value || null;
+    const bdChosen = [bd1, bd2, bd3].filter(Boolean);
+    if(new Set(bdChosen).size !== bdChosen.length){
+      showToast('Best defender picks must be three different players (or left blank)');
+      return;
+    }
+
     const events = [];
     document.querySelectorAll('#event-rows .ga-row').forEach(row => {
       const playerId = row.getAttribute('data-player-id');
@@ -229,6 +296,9 @@ export function initMatch(){
       teamB: { name: teamBName, players: idsB },
       scoreA, scoreB,
       events,
+      bestDefender1st: bd1,
+      bestDefender2nd: bd2,
+      bestDefender3rd: bd3,
       votes: (existing && existing.votes) || {},
       pollClosed: existing ? !!existing.pollClosed : false,
       mvpPlayerId: existing ? (existing.mvpPlayerId || null) : null,

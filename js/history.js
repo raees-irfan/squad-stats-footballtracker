@@ -23,6 +23,21 @@ function emojiBadges(emoji, count){
   return `${emoji} ×${count}`;
 }
 
+function bestDefenderHtml(m){
+  const picks = [
+    m.bestDefender1st ? { label: '🥇 1st', name: playerName(m.bestDefender1st) } : null,
+    m.bestDefender2nd ? { label: '🥈 2nd', name: playerName(m.bestDefender2nd) } : null,
+    m.bestDefender3rd ? { label: '🥉 3rd', name: playerName(m.bestDefender3rd) } : null
+  ].filter(Boolean);
+  if(picks.length === 0) return '';
+  return `
+    <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin:10px 0 6px;">Best defenders</div>
+    <div style="font-size:13px; margin-bottom:6px;">
+      ${picks.map(p => `<div>${p.label}: ${escapeHtml(p.name)}</div>`).join('')}
+    </div>
+  `;
+}
+
 export function renderHistory(){
   const wrap = document.getElementById('history-list');
   if(!state.currentUser){
@@ -70,6 +85,7 @@ export function renderHistory(){
           <div style="font-size:13px; margin-bottom:10px;">${m.teamB.players.map(playerName).map(escapeHtml).join(', ')}</div>
           <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">Goals &amp; assists</div>
           ${statsLines}
+          ${bestDefenderHtml(m)}
           ${mvpSectionHtml(m)}
           ${state.isAdmin ? `
             <div style="display:flex; gap:8px; margin-top:8px;">

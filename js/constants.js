@@ -4,9 +4,12 @@ export const POINTS = {
   ASSIST: 2,
   MVP: 3,
   WIN: 4,
-  BEST_DEFENDER_1ST: 4,
-  BEST_DEFENDER_2ND: 3,
-  CLEAN_SHEET: 3
+  BEST_DEFENDER_1ST: 5,
+  BEST_DEFENDER_2ND: 4,
+  BEST_DEFENDER_3RD: 3,
+  // Awarded per player whenever their team concedes 5 goals or fewer in a
+  // match. Boosts DEF rating only - does not add to Leaderboard points.
+  PERFORMANCE_BONUS: 3
 };
 
 /* ---------- Hardcoded player photos ----------

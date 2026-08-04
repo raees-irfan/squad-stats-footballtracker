@@ -1,4 +1,5 @@
-/* ---------- Shared stat computation: goals, assists, MVP, and team-win bonus ---------- */
+/* ---------- Shared stat computation: goals, assists, MVP, team-win bonus,
+   performance bonus (DEF rating only), and Best Defender awards ---------- */
 import { state } from './state.js';
 import { POINTS } from './constants.js';
 
@@ -30,21 +31,40 @@ export function computePlayerStats(){
       });
     }
 
-    // Clean sheet bonus: if team concedes 5 or less goals, all players get 3 defPoints (not in leaderboard)
+    // Performance bonus: if a team concedes 5 goals or fewer, every player
+    // on that team gets a defPoints bump (boosts DEF rating only, does
+    // not count toward Leaderboard points).
     // Team A concedes what Team B scores, Team B concedes what Team A scores
     if(m.scoreB <= 5){
       m.teamA.players.forEach(pid => {
         if(stats[pid]){
-          stats[pid].defPoints += 3;
+          stats[pid].defPoints += POINTS.PERFORMANCE_BONUS;
         }
       });
     }
     if(m.scoreA <= 5){
       m.teamB.players.forEach(pid => {
         if(stats[pid]){
-          stats[pid].defPoints += 3;
+          stats[pid].defPoints += POINTS.PERFORMANCE_BONUS;
         }
       });
+    }
+
+    // Best Defender (admin-picked at match-logging time, from any player
+    // in the match regardless of position): counts toward BOTH Leaderboard
+    // points AND defPoints - this is defenders' equivalent of goals/assists
+    // giving forwards/midfielders a way to earn points.
+    if(m.bestDefender1st && stats[m.bestDefender1st]){
+      stats[m.bestDefender1st].points += POINTS.BEST_DEFENDER_1ST;
+      stats[m.bestDefender1st].defPoints += POINTS.BEST_DEFENDER_1ST;
+    }
+    if(m.bestDefender2nd && stats[m.bestDefender2nd]){
+      stats[m.bestDefender2nd].points += POINTS.BEST_DEFENDER_2ND;
+      stats[m.bestDefender2nd].defPoints += POINTS.BEST_DEFENDER_2ND;
+    }
+    if(m.bestDefender3rd && stats[m.bestDefender3rd]){
+      stats[m.bestDefender3rd].points += POINTS.BEST_DEFENDER_3RD;
+      stats[m.bestDefender3rd].defPoints += POINTS.BEST_DEFENDER_3RD;
     }
   });
   return stats;
