@@ -10,19 +10,20 @@
    recent first, not just the current year - so past seasons stay
    visible instead of disappearing once the calendar rolls over.
    Rendered only inside the admin-settings panel, which is already
-   hidden from non-admins - nothing extra to gate here.
+   hidden from non-admins - nothing extra to gate here, and admins can
+   always see live current standings (no reveal delay - a section only
+   admins can see in the first place gains nothing by being locked from
+   them too).
 
    Season window: tallying for a given year only counts matches dated
-   Dec 30 or earlier that year - Dec 31 is a buffer day, uncounted, before
-   results reveal. This is a general per-year rule (not a 2026 special
-   case), so it applies the same way to every season, past and future. */
+   Dec 30 or earlier that year - Dec 31 is a buffer day, uncounted. This
+   is a general per-year rule (not a 2026 special case), so it applies
+   the same way to every season, past and future. */
 import { state } from './state.js';
 import { escapeHtml } from './utils.js';
 
 const CUTOFF_MONTH = 11; // December, 0-indexed
 const CUTOFF_DAY = 30;
-const REVEAL_MONTH = 11;
-const REVEAL_DAY = 31;
 
 function getYear(dateStr){
   const d = new Date(dateStr + 'T00:00:00');
@@ -37,14 +38,6 @@ function isWithinAwardWindow(dateStr){
   if(isNaN(d)) return false;
   if(d.getMonth() === CUTOFF_MONTH && d.getDate() > CUTOFF_DAY) return false;
   return true;
-}
-
-/* Results for a year only become visible once the real, current date has
-   reached Dec 31 of that year - before that, the section stays locked. */
-function isRevealed(year){
-  const now = new Date();
-  const revealDate = new Date(year, REVEAL_MONTH, REVEAL_DAY);
-  return now >= revealDate;
 }
 
 function nameOf(id){
@@ -84,7 +77,6 @@ export function computeYearlyAwards(){
   const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
   return years.map(year => ({
     year,
-    revealed: isRevealed(year),
     ballonDor: topPlayers(byYear[year].mvpCounts),
     goldenBoot: topPlayers(byYear[year].goalCounts),
     playmaker: topPlayers(byYear[year].assistCounts)
@@ -104,24 +96,14 @@ export function yearlyAwardsHtml(){
   if(awards.length === 0){
     return '<div style="font-size:12px; color:rgba(22,24,28,0.5);">No matches logged yet.</div>';
   }
-  return awards.map(a => {
-    if(!a.revealed){
-      return `
-        <div style="padding:8px 0; border-bottom:1px solid var(--line);">
-          <div style="font-family:'Space Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">${a.year}</div>
-          <div style="font-size:13px; color:rgba(22,24,28,0.5);">🔒 Results reveal on Dec 31, ${a.year}</div>
-        </div>
-      `;
-    }
-    return `
-      <div style="padding:8px 0; border-bottom:1px solid var(--line);">
-        <div style="font-family:'Space Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">${a.year}</div>
-        ${awardLine("Ballon d'Or (Player of the Year)", '🏆', a.ballonDor, 'MVP')}
-        ${awardLine('Golden Boot', '👟', a.goldenBoot, 'goal')}
-        ${awardLine('Playmaker of the Year', '🎯', a.playmaker, 'assist')}
-      </div>
-    `;
-  }).join('');
+  return awards.map(a => `
+    <div style="padding:8px 0; border-bottom:1px solid var(--line);">
+      <div style="font-family:'Space Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:rgba(22,24,28,0.5); margin-bottom:6px;">${a.year}</div>
+      ${awardLine("Ballon d'Or (Player of the Year)", '🏆', a.ballonDor, 'MVP')}
+      ${awardLine('Golden Boot', '👟', a.goldenBoot, 'goal')}
+      ${awardLine('Playmaker of the Year', '🎯', a.playmaker, 'assist')}
+    </div>
+  `).join('');
 }
 
 export function renderYearlyAwards(){
