@@ -8,6 +8,7 @@ import { initSquad } from './squad.js';
 import { initMatch } from './match.js';
 import { initHistory } from './history.js';
 import { initPlayerStats } from './playerProfile.js';
+import { initLeaderboard } from './leaderboard.js';
 import { initNav } from './nav.js';
 import { renderAll } from './data.js';
 
@@ -21,6 +22,7 @@ initSquad();
 initMatch();
 initHistory();
 initPlayerStats();
+initLeaderboard();
 initNav();
 
 updateNavVisibility();
