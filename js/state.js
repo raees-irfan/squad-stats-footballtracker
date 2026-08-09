@@ -14,5 +14,6 @@ export const state = {
   linkingPlayerId: null,
   editingMatchId: null,
   expandedPlayerId: null,
+  expandedLeaderboardId: null,
   profileEditPlayerId: null
 };

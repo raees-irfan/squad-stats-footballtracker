@@ -5,7 +5,17 @@ import { POINTS } from './constants.js';
 
 export function computePlayerStats(){
   const stats = {};
-  state.data.players.forEach(p => { stats[p.id] = { id: p.id, name: p.name, goals: 0, assists: 0, matches: 0, mvps: 0, wins: 0, points: 0, defPoints: 0 }; });
+  state.data.players.forEach(p => {
+    stats[p.id] = {
+      id: p.id, name: p.name, goals: 0, assists: 0, matches: 0, mvps: 0, wins: 0, points: 0, defPoints: 0,
+      // Every Leaderboard point source writes to its own bucket here too,
+      // so the "why does this player have this many points" breakdown is
+      // correct by construction - not inferred after the fact, which
+      // would silently misattribute anything if a new source gets added
+      // later and someone forgets to update the inference.
+      breakdown: { goals: 0, assists: 0, win: 0, mvp: 0, bestDefender: 0 }
+    };
+  });
 
   state.data.matches.forEach(m => {
     [...m.teamA.players, ...m.teamB.players].forEach(pid => {
@@ -13,12 +23,13 @@ export function computePlayerStats(){
     });
     m.events.forEach(ev => {
       if(!stats[ev.playerId]) return;
-      if(ev.type === 'goal'){ stats[ev.playerId].goals++; stats[ev.playerId].points += POINTS.GOAL; }
-      if(ev.type === 'assist'){ stats[ev.playerId].assists++; stats[ev.playerId].points += POINTS.ASSIST; }
+      if(ev.type === 'goal'){ stats[ev.playerId].goals++; stats[ev.playerId].points += POINTS.GOAL; stats[ev.playerId].breakdown.goals += POINTS.GOAL; }
+      if(ev.type === 'assist'){ stats[ev.playerId].assists++; stats[ev.playerId].points += POINTS.ASSIST; stats[ev.playerId].breakdown.assists += POINTS.ASSIST; }
     });
     if(m.pollClosed && m.mvpPlayerId && stats[m.mvpPlayerId]){
       stats[m.mvpPlayerId].mvps++;
       stats[m.mvpPlayerId].points += POINTS.MVP;
+      stats[m.mvpPlayerId].breakdown.mvp += POINTS.MVP;
     }
     // Every player on the winning team gets a flat bonus. A draw (equal
     // scores) awards nobody a win bonus.
@@ -28,6 +39,7 @@ export function computePlayerStats(){
         if(!stats[pid]) return;
         stats[pid].wins++;
         stats[pid].points += POINTS.WIN;
+        stats[pid].breakdown.win += POINTS.WIN;
       });
     }
 
@@ -57,14 +69,17 @@ export function computePlayerStats(){
     if(m.bestDefender1st && stats[m.bestDefender1st]){
       stats[m.bestDefender1st].points += POINTS.BEST_DEFENDER_1ST;
       stats[m.bestDefender1st].defPoints += POINTS.BEST_DEFENDER_1ST;
+      stats[m.bestDefender1st].breakdown.bestDefender += POINTS.BEST_DEFENDER_1ST;
     }
     if(m.bestDefender2nd && stats[m.bestDefender2nd]){
       stats[m.bestDefender2nd].points += POINTS.BEST_DEFENDER_2ND;
       stats[m.bestDefender2nd].defPoints += POINTS.BEST_DEFENDER_2ND;
+      stats[m.bestDefender2nd].breakdown.bestDefender += POINTS.BEST_DEFENDER_2ND;
     }
     if(m.bestDefender3rd && stats[m.bestDefender3rd]){
       stats[m.bestDefender3rd].points += POINTS.BEST_DEFENDER_3RD;
       stats[m.bestDefender3rd].defPoints += POINTS.BEST_DEFENDER_3RD;
+      stats[m.bestDefender3rd].breakdown.bestDefender += POINTS.BEST_DEFENDER_3RD;
     }
   });
   return stats;
