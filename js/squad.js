@@ -66,13 +66,16 @@ export function renderSquad(){
     return;
   }
 
+  // My-profile card shows for EVERYONE, admins included - being an admin
+  // shouldn't mean you can't see/edit your own player card the same way
+  // anyone else does. Admin tools (add-player form, squad management)
+  // layer on top for admins, they don't replace the profile card.
+  myProfileWrap.innerHTML = myProfileSquadSectionHtml();
   if(state.isAdmin){
     adminCard.style.display = '';
-    myProfileWrap.innerHTML = '';
     listHeader.style.display = 'flex';
   }else{
     adminCard.style.display = 'none';
-    myProfileWrap.innerHTML = myProfileSquadSectionHtml();
     listHeader.style.display = 'none';
   }
 

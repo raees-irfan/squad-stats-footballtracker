@@ -51,19 +51,16 @@ export function computePlayerStats(){
     }
 
     // Best Defender (admin-picked at match-logging time, from any player
-    // in the match regardless of position): counts toward BOTH Leaderboard
-    // points AND defPoints - this is defenders' equivalent of goals/assists
-    // giving forwards/midfielders a way to earn points.
+    // in the match regardless of position): boosts defPoints only - same
+    // as the performance bonus, this affects DEF rating/OVR on the Player
+    // Stats page but does NOT count toward Leaderboard points.
     if(m.bestDefender1st && stats[m.bestDefender1st]){
-      stats[m.bestDefender1st].points += POINTS.BEST_DEFENDER_1ST;
       stats[m.bestDefender1st].defPoints += POINTS.BEST_DEFENDER_1ST;
     }
     if(m.bestDefender2nd && stats[m.bestDefender2nd]){
-      stats[m.bestDefender2nd].points += POINTS.BEST_DEFENDER_2ND;
       stats[m.bestDefender2nd].defPoints += POINTS.BEST_DEFENDER_2ND;
     }
     if(m.bestDefender3rd && stats[m.bestDefender3rd]){
-      stats[m.bestDefender3rd].points += POINTS.BEST_DEFENDER_3RD;
       stats[m.bestDefender3rd].defPoints += POINTS.BEST_DEFENDER_3RD;
     }
   });

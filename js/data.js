@@ -9,6 +9,7 @@ import { renderPlayerPicks } from './match.js';
 import { renderHistory } from './history.js';
 import { renderLeaderboard } from './leaderboard.js';
 import { renderPlayerStats } from './playerProfile.js';
+import { renderYearlyAwards } from './awards.js';
 
 export async function loadData(){
   if(!canViewData()){
@@ -40,4 +41,5 @@ export function renderAll(){
   renderHistory();
   renderLeaderboard();
   renderPlayerStats();
+  renderYearlyAwards();
 }
