@@ -40,7 +40,7 @@ export function renderLeaderboard(){
     return;
   }
   const stats = computePlayerStats();
-  const rows = Object.values(stats).sort((a,b) => b.points - a.points || (b.goals + b.assists) - (a.goals + a.assists) || b.goals - a.goals);
+  const rows = Object.values(stats).sort((a,b) => b.points - a.points || (b.goals + b.assists) - (a.goals + a.assists) || b.goals - a.goals || b.matches - a.matches);
   wrap.innerHTML = `
     <table>
       <thead>
