@@ -13,7 +13,12 @@ export function computePlayerStats(){
       // correct by construction - not inferred after the fact, which
       // would silently misattribute anything if a new source gets added
       // later and someone forgets to update the inference.
-      breakdown: { goals: 0, assists: 0, win: 0, mvp: 0, bestDefender: 0 }
+      breakdown: { goals: 0, assists: 0, win: 0, mvp: 0, bestDefender: 0 },
+      // Same idea, but for what's actually fed INTO defPoints (used by the
+      // admin-only rating breakdown - the DEF number alone doesn't say
+      // whether it came from clean-sheet-style performance bonuses or
+      // genuine Best Defender picks, this does).
+      defBreakdown: { performanceBonusMatches: 0, bestDefender1st: 0, bestDefender2nd: 0, bestDefender3rd: 0 }
     };
   });
 
@@ -51,6 +56,7 @@ export function computePlayerStats(){
       m.teamA.players.forEach(pid => {
         if(stats[pid]){
           stats[pid].defPoints += POINTS.PERFORMANCE_BONUS;
+          stats[pid].defBreakdown.performanceBonusMatches++;
         }
       });
     }
@@ -58,6 +64,7 @@ export function computePlayerStats(){
       m.teamB.players.forEach(pid => {
         if(stats[pid]){
           stats[pid].defPoints += POINTS.PERFORMANCE_BONUS;
+          stats[pid].defBreakdown.performanceBonusMatches++;
         }
       });
     }
@@ -70,16 +77,19 @@ export function computePlayerStats(){
       stats[m.bestDefender1st].points += POINTS.BEST_DEFENDER_1ST;
       stats[m.bestDefender1st].defPoints += POINTS.BEST_DEFENDER_1ST;
       stats[m.bestDefender1st].breakdown.bestDefender += POINTS.BEST_DEFENDER_1ST;
+      stats[m.bestDefender1st].defBreakdown.bestDefender1st++;
     }
     if(m.bestDefender2nd && stats[m.bestDefender2nd]){
       stats[m.bestDefender2nd].points += POINTS.BEST_DEFENDER_2ND;
       stats[m.bestDefender2nd].defPoints += POINTS.BEST_DEFENDER_2ND;
       stats[m.bestDefender2nd].breakdown.bestDefender += POINTS.BEST_DEFENDER_2ND;
+      stats[m.bestDefender2nd].defBreakdown.bestDefender2nd++;
     }
     if(m.bestDefender3rd && stats[m.bestDefender3rd]){
       stats[m.bestDefender3rd].points += POINTS.BEST_DEFENDER_3RD;
       stats[m.bestDefender3rd].defPoints += POINTS.BEST_DEFENDER_3RD;
       stats[m.bestDefender3rd].breakdown.bestDefender += POINTS.BEST_DEFENDER_3RD;
+      stats[m.bestDefender3rd].defBreakdown.bestDefender3rd++;
     }
   });
   return stats;

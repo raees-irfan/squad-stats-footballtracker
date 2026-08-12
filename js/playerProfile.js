@@ -136,6 +136,29 @@ export async function handleMyProfileCreate(formEl){
   showToast('Profile created!');
 }
 
+function ratingBreakdownHtml(r){
+  const matches = r.matches || 0;
+  const avgGoals = matches ? (r.goals / matches).toFixed(1) : '0.0';
+  const avgAssists = matches ? (r.assists / matches).toFixed(1) : '0.0';
+  const avgDef = matches ? ((r.defPoints || 0) / matches).toFixed(1) : '0.0';
+  const db = r.defBreakdown || { performanceBonusMatches: 0, bestDefender1st: 0, bestDefender2nd: 0, bestDefender3rd: 0 };
+  const defSources = [
+    db.performanceBonusMatches > 0 ? `${db.performanceBonusMatches} performance bonus${db.performanceBonusMatches === 1 ? '' : 'es'}` : null,
+    db.bestDefender1st > 0 ? `${db.bestDefender1st}× 1st best defender` : null,
+    db.bestDefender2nd > 0 ? `${db.bestDefender2nd}× 2nd best defender` : null,
+    db.bestDefender3rd > 0 ? `${db.bestDefender3rd}× 3rd best defender` : null
+  ].filter(Boolean).join(', ') || 'none yet';
+
+  return `
+    <div style="margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,0.25); font-size:11px; color:rgba(245,241,230,0.75); text-align:left; line-height:1.6;">
+      <div style="font-weight:700; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.05em; color:rgba(245,241,230,0.9);">Rating breakdown (admin only)</div>
+      <div>FIN — ${avgGoals} goals/match (${r.goals} over ${matches} MP)</div>
+      <div>PAS — ${avgAssists} assists/match (${r.assists} over ${matches} MP)</div>
+      <div>DEF — ${avgDef} defPoints/match: ${defSources}</div>
+    </div>
+  `;
+}
+
 function fplCardHtml(r, player){
   const pr = player.profile;
   const posMeta = POSITION_META[pr.position] || { label: '—', color: 'var(--ink)' };
@@ -165,6 +188,7 @@ function fplCardHtml(r, player){
       </div>
       ${footerBits ? `<div class="fpl-footer">${footerBits}</div>` : ''}
       ${pr.bio ? `<div class="fpl-bio">“${escapeHtml(pr.bio)}”</div>` : ''}
+      ${state.isAdmin ? ratingBreakdownHtml(r) : ''}
       ${(state.isAdmin || isMyPlayer(player)) ? `<button type="button" class="ghost" data-edit-profile="${player.id}" style="margin-top:8px;">Edit profile</button>` : ''}
     </div>
   `;
@@ -235,7 +259,7 @@ export function renderPlayerStats(){
 
   let dirty = false;
   state.data.players.forEach(p => {
-    if(ensurePlayerRatings(p, stats[p.id], false)) dirty = true;
+    if(ensurePlayerRatings(p, stats[p.id])) dirty = true;
   });
   if(dirty){
     state.data.players.forEach(p => {
