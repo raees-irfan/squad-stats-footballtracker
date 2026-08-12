@@ -18,7 +18,7 @@ export function computePlayerStats(){
       // admin-only rating breakdown - the DEF number alone doesn't say
       // whether it came from clean-sheet-style performance bonuses or
       // genuine Best Defender picks, this does).
-      defBreakdown: { performanceBonusMatches: 0, bestDefender1st: 0, bestDefender2nd: 0, bestDefender3rd: 0 }
+      defBreakdown: { performanceBonusMatches: 0, bestDefender1st: 0, bestDefender2nd: 0, bestDefender3rd: 0, bestDefender4th: 0, bestDefender5th: 0 }
     };
   });
 
@@ -90,6 +90,18 @@ export function computePlayerStats(){
       stats[m.bestDefender3rd].defPoints += POINTS.BEST_DEFENDER_3RD;
       stats[m.bestDefender3rd].breakdown.bestDefender += POINTS.BEST_DEFENDER_3RD;
       stats[m.bestDefender3rd].defBreakdown.bestDefender3rd++;
+    }
+    if(m.bestDefender4th && stats[m.bestDefender4th]){
+      stats[m.bestDefender4th].points += POINTS.BEST_DEFENDER_4TH;
+      stats[m.bestDefender4th].defPoints += POINTS.BEST_DEFENDER_4TH;
+      stats[m.bestDefender4th].breakdown.bestDefender += POINTS.BEST_DEFENDER_4TH;
+      stats[m.bestDefender4th].defBreakdown.bestDefender4th++;
+    }
+    if(m.bestDefender5th && stats[m.bestDefender5th]){
+      stats[m.bestDefender5th].points += POINTS.BEST_DEFENDER_5TH;
+      stats[m.bestDefender5th].defPoints += POINTS.BEST_DEFENDER_5TH;
+      stats[m.bestDefender5th].breakdown.bestDefender += POINTS.BEST_DEFENDER_5TH;
+      stats[m.bestDefender5th].defBreakdown.bestDefender5th++;
     }
   });
   return stats;

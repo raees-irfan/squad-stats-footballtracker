@@ -2,11 +2,11 @@
 import { state } from './state.js';
 import { escapeHtml, showToast } from './utils.js';
 import { avatarHtml, triggerPhotoUpload } from './photos.js';
-import { POSITION_META } from './constants.js';
+import { POSITION_META, STAT_BASE, DEFAULT_BASE } from './constants.js';
 import { playersCol, doc, setDoc, updateDoc } from './firebase.js';
 import { loadData } from './data.js';
 import { computePlayerStats } from './stats.js';
-import { ensurePlayerRatings, getPlayerRatingValues, computeOverall } from './ratings.js';
+import { getPlayerRatingValues, computeOverall } from './ratings.js';
 import { canViewData } from './auth.js';
 import { pendingApprovalHtml } from './data.js';
 import { isMyPlayer } from './ownership.js';
@@ -136,25 +136,31 @@ export async function handleMyProfileCreate(formEl){
   showToast('Profile created!');
 }
 
-function ratingBreakdownHtml(r){
+function ratingBreakdownHtml(r, player){
   const matches = r.matches || 0;
   const avgGoals = matches ? (r.goals / matches).toFixed(1) : '0.0';
   const avgAssists = matches ? (r.assists / matches).toFixed(1) : '0.0';
   const avgDef = matches ? ((r.defPoints || 0) / matches).toFixed(1) : '0.0';
-  const db = r.defBreakdown || { performanceBonusMatches: 0, bestDefender1st: 0, bestDefender2nd: 0, bestDefender3rd: 0 };
+  const db = r.defBreakdown || { performanceBonusMatches: 0, bestDefender1st: 0, bestDefender2nd: 0, bestDefender3rd: 0, bestDefender4th: 0, bestDefender5th: 0 };
   const defSources = [
     db.performanceBonusMatches > 0 ? `${db.performanceBonusMatches} performance bonus${db.performanceBonusMatches === 1 ? '' : 'es'}` : null,
     db.bestDefender1st > 0 ? `${db.bestDefender1st}× 1st best defender` : null,
     db.bestDefender2nd > 0 ? `${db.bestDefender2nd}× 2nd best defender` : null,
-    db.bestDefender3rd > 0 ? `${db.bestDefender3rd}× 3rd best defender` : null
+    db.bestDefender3rd > 0 ? `${db.bestDefender3rd}× 3rd best defender` : null,
+    db.bestDefender4th > 0 ? `${db.bestDefender4th}× 4th best defender` : null,
+    db.bestDefender5th > 0 ? `${db.bestDefender5th}× 5th best defender` : null
   ].filter(Boolean).join(', ') || 'none yet';
+
+  const position = (player.profile && player.profile.position) || null;
+  const base = STAT_BASE[position] || DEFAULT_BASE;
+  const ratings = getPlayerRatingValues(player, r);
 
   return `
     <div style="margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,0.25); font-size:11px; color:rgba(245,241,230,0.75); text-align:left; line-height:1.6;">
       <div style="font-weight:700; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.05em; color:rgba(245,241,230,0.9);">Rating breakdown (admin only)</div>
-      <div>FIN — ${avgGoals} goals/match (${r.goals} over ${matches} MP)</div>
-      <div>PAS — ${avgAssists} assists/match (${r.assists} over ${matches} MP)</div>
-      <div>DEF — ${avgDef} defPoints/match: ${defSources}</div>
+      <div>FIN — ${avgGoals} goals/match (${r.goals} over ${matches} MP) · base ${base.finishing} → <strong>${ratings.finishing}</strong></div>
+      <div>PAS — ${avgAssists} assists/match (${r.assists} over ${matches} MP) · base ${base.passing} → <strong>${ratings.passing}</strong></div>
+      <div>DEF — ${avgDef} defPoints/match: ${defSources} · base ${base.defending} → <strong>${ratings.defending}</strong></div>
     </div>
   `;
 }
@@ -188,7 +194,7 @@ function fplCardHtml(r, player){
       </div>
       ${footerBits ? `<div class="fpl-footer">${footerBits}</div>` : ''}
       ${pr.bio ? `<div class="fpl-bio">“${escapeHtml(pr.bio)}”</div>` : ''}
-      ${state.isAdmin ? ratingBreakdownHtml(r) : ''}
+      ${state.isAdmin ? ratingBreakdownHtml(r, player) : ''}
       ${(state.isAdmin || isMyPlayer(player)) ? `<button type="button" class="ghost" data-edit-profile="${player.id}" style="margin-top:8px;">Edit profile</button>` : ''}
     </div>
   `;
@@ -256,23 +262,14 @@ export function renderPlayerStats(){
     return;
   }
   const stats = computePlayerStats();
-
-  let dirty = false;
-  state.data.players.forEach(p => {
-    if(ensurePlayerRatings(p, stats[p.id])) dirty = true;
-  });
-  if(dirty){
-    state.data.players.forEach(p => {
-      if(p.ratings){
-        updateDoc(doc(playersCol, p.id), { ratings: p.ratings }).catch(() => {});
-      }
-    });
-  }
+  // Ratings are now pure math from live match data - no random rolls, so
+  // nothing needs to be persisted or "ensured" here anymore. Every render
+  // just recalculates fresh from (position, current stat row).
 
   const rows = Object.values(stats)
     .map(r => {
       const player = state.data.players.find(p => p.id === r.id) || { id: r.id, name: r.name };
-      return { r, player, overall: computeOverall(player) };
+      return { r, player, overall: computeOverall(player, r) };
     })
     .sort((a, b) => b.overall - a.overall || b.r.points - a.r.points || a.r.name.localeCompare(b.r.name));
 
@@ -283,7 +280,7 @@ export function renderPlayerStats(){
       ? `<span class="pos-badge" style="background:${posMeta.color};">${posMeta.label}</span>`
       : `<span class="pos-badge pos-badge--empty">SET UP</span>`;
 
-    const ratings = getPlayerRatingValues(player);
+    const ratings = getPlayerRatingValues(player, r);
 
     return `
       <div class="card player-row" data-player-toggle="${r.id}">

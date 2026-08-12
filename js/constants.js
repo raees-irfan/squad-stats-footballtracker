@@ -7,6 +7,8 @@ export const POINTS = {
   BEST_DEFENDER_1ST: 5,
   BEST_DEFENDER_2ND: 4,
   BEST_DEFENDER_3RD: 3,
+  BEST_DEFENDER_4TH: 2,
+  BEST_DEFENDER_5TH: 1,
   // Awarded per player whenever their team concedes 5 goals or fewer in a
   // match. Boosts DEF rating only - does not add to Leaderboard points.
   PERFORMANCE_BONUS: 3
@@ -21,9 +23,23 @@ export const POINTS = {
 ------------------------------------------------- */
 export const PLAYER_PHOTOS = {};
 
-/* ---------- Player profiles & FPL-style card ratings ---------- */
-export const RATING_BASE = 60;
-export const DEFENDING_BASE = 70;
+/* ---------- Player profiles & FPL-style card ratings ----------
+   Each position has its own STARTING/BASE rating for each of the three
+   stats (FIN/PAS/DEF) - not a weighting applied to the final number, but
+   where that stat's curve starts from before any performance is factored
+   in. GK uses the same bases as DEF (per an explicit call - the original
+   spec only covered FWD/MID/DEF). DEFAULT_BASE is a neutral fallback for
+   a player whose position isn't set yet (e.g. profile not filled in). */
+export const STAT_BASE = {
+  FWD: { finishing: 70, passing: 60, defending: 60 },
+  MID: { finishing: 60, passing: 70, defending: 60 },
+  DEF: { finishing: 60, passing: 60, defending: 70 },
+  GK:  { finishing: 60, passing: 60, defending: 70 }
+};
+export const DEFAULT_BASE = { finishing: 60, passing: 60, defending: 60 };
+
+/* K is fixed at 1 for every stat, permanently - Rating = Base + (99-Base) * (rate / (rate + K)) */
+export const RATING_K = 1;
 
 export const POSITION_META = {
   GK:  { label: 'GK',  full: 'Goalkeeper', color: 'var(--amber)' },
@@ -31,11 +47,3 @@ export const POSITION_META = {
   MID: { label: 'MID', full: 'Midfielder', color: 'var(--pitch-dark)' },
   FWD: { label: 'FWD', full: 'Forward',    color: 'var(--red)' }
 };
-
-export const POSITION_WEIGHTS = {
-  GK:  { finishing: 0.10, passing: 0.20, defending: 0.70 },
-  DEF: { finishing: 0.15, passing: 0.25, defending: 0.60 },
-  MID: { finishing: 0.30, passing: 0.40, defending: 0.30 },
-  FWD: { finishing: 0.55, passing: 0.25, defending: 0.20 }
-};
-export const DEFAULT_WEIGHTS = { finishing: 0.34, passing: 0.33, defending: 0.33 };

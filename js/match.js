@@ -100,13 +100,14 @@ function getAllPickedIds(){
 }
 
 function readCurrentBestDefenderValues(){
-  const first = document.getElementById('bd-1st');
-  const second = document.getElementById('bd-2nd');
-  const third = document.getElementById('bd-3rd');
+  const ids = ['bd-1st', 'bd-2nd', 'bd-3rd', 'bd-4th', 'bd-5th'];
+  const [first, second, third, fourth, fifth] = ids.map(id => document.getElementById(id));
   return {
     first: first ? first.value : '',
     second: second ? second.value : '',
-    third: third ? third.value : ''
+    third: third ? third.value : '',
+    fourth: fourth ? fourth.value : '',
+    fifth: fifth ? fifth.value : ''
   };
 }
 
@@ -139,8 +140,18 @@ export function renderBestDefenderSelects(){
         <select id="bd-2nd">${bestDefenderOptionsHtml(allIds, prev.second)}</select>
       </div>
     </div>
-    <label>3rd (+${POINTS.BEST_DEFENDER_3RD} pts)</label>
-    <select id="bd-3rd">${bestDefenderOptionsHtml(allIds, prev.third)}</select>
+    <div class="row2">
+      <div>
+        <label>3rd (+${POINTS.BEST_DEFENDER_3RD} pts)</label>
+        <select id="bd-3rd">${bestDefenderOptionsHtml(allIds, prev.third)}</select>
+      </div>
+      <div>
+        <label>4th (+${POINTS.BEST_DEFENDER_4TH} pts)</label>
+        <select id="bd-4th">${bestDefenderOptionsHtml(allIds, prev.fourth)}</select>
+      </div>
+    </div>
+    <label>5th (+${POINTS.BEST_DEFENDER_5TH} pt)</label>
+    <select id="bd-5th">${bestDefenderOptionsHtml(allIds, prev.fifth)}</select>
   `;
 }
 
@@ -180,6 +191,8 @@ export function enterEditMode(match){
   document.getElementById('bd-1st').value = match.bestDefender1st || '';
   document.getElementById('bd-2nd').value = match.bestDefender2nd || '';
   document.getElementById('bd-3rd').value = match.bestDefender3rd || '';
+  document.getElementById('bd-4th').value = match.bestDefender4th || '';
+  document.getElementById('bd-5th').value = match.bestDefender5th || '';
 
   const counts = {};
   match.events.forEach(ev => {
@@ -269,9 +282,11 @@ export function initMatch(){
     const bd1 = document.getElementById('bd-1st')?.value || null;
     const bd2 = document.getElementById('bd-2nd')?.value || null;
     const bd3 = document.getElementById('bd-3rd')?.value || null;
-    const bdChosen = [bd1, bd2, bd3].filter(Boolean);
+    const bd4 = document.getElementById('bd-4th')?.value || null;
+    const bd5 = document.getElementById('bd-5th')?.value || null;
+    const bdChosen = [bd1, bd2, bd3, bd4, bd5].filter(Boolean);
     if(new Set(bdChosen).size !== bdChosen.length){
-      showToast('Best defender picks must be three different players (or left blank)');
+      showToast('Best defender picks must all be different players (or left blank)');
       return;
     }
 
@@ -299,6 +314,8 @@ export function initMatch(){
       bestDefender1st: bd1,
       bestDefender2nd: bd2,
       bestDefender3rd: bd3,
+      bestDefender4th: bd4,
+      bestDefender5th: bd5,
       votes: (existing && existing.votes) || {},
       pollClosed: existing ? !!existing.pollClosed : false,
       mvpPlayerId: existing ? (existing.mvpPlayerId || null) : null,
