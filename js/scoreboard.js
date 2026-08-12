@@ -3,6 +3,7 @@ import { state } from './state.js';
 import { escapeHtml, formatDate } from './utils.js';
 import { avatarHtml } from './photos.js';
 import { computeOverall } from './ratings.js';
+import { computePlayerStats } from './stats.js';
 import { POSITION_META } from './constants.js';
 
 function nameOf(id){
@@ -24,7 +25,8 @@ function mvpMiniCardHtml(match){
   const player = state.data.players.find(p => p.id === match.mvpPlayerId);
   if(!player) return '';
   const { goals, assists } = goalsAssistsInMatch(match, player.id);
-  const overall = computeOverall(player);
+  const statRow = computePlayerStats()[player.id];
+  const overall = computeOverall(player, statRow);
   const pr = player.profile || {};
   const posMeta = pr.position ? POSITION_META[pr.position] : null;
 

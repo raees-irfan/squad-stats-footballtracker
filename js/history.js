@@ -27,7 +27,9 @@ function bestDefenderHtml(m){
   const picks = [
     m.bestDefender1st ? { label: '🥇 1st', name: playerName(m.bestDefender1st) } : null,
     m.bestDefender2nd ? { label: '🥈 2nd', name: playerName(m.bestDefender2nd) } : null,
-    m.bestDefender3rd ? { label: '🥉 3rd', name: playerName(m.bestDefender3rd) } : null
+    m.bestDefender3rd ? { label: '🥉 3rd', name: playerName(m.bestDefender3rd) } : null,
+    m.bestDefender4th ? { label: '4th', name: playerName(m.bestDefender4th) } : null,
+    m.bestDefender5th ? { label: '5th', name: playerName(m.bestDefender5th) } : null
   ].filter(Boolean);
   if(picks.length === 0) return '';
   return `

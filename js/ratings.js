@@ -1,63 +1,48 @@
-/* ---------- FPL-style card rating calculation ---------- */
-import { RATING_BASE, DEFENDING_BASE, POSITION_WEIGHTS, DEFAULT_WEIGHTS } from './constants.js';
+/* ---------- Player rating calculation (deterministic, no random rolls) ----------
+   Rating = Base + (99 - Base) * (Rate / (Rate + K)), K fixed at 1.
 
-export function attackTier(avgPerMatch){
-  if(avgPerMatch >= 5) return { key: 't5', min: 95, max: 99 };
-  if(avgPerMatch >= 3) return { key: 't3', min: 90, max: 94 };
-  if(avgPerMatch >= 2) return { key: 't2', min: 80, max: 89 };
-  if(avgPerMatch >= 1) return { key: 't1', min: 70, max: 79 };
-  return { key: 't0', min: RATING_BASE, max: RATING_BASE };
+   - FIN's Rate is goals per match.
+   - PAS's Rate is assists per match.
+   - DEF's Rate is defPoints per match.
+   Base is set per position, per stat (see STAT_BASE in constants.js) - it's
+   where that stat's curve starts, not a weighting on the final number.
+   The curve climbs quickly at low rates and flattens out approaching 99
+   (diminishing returns) - it mathematically never reaches 99.
+
+   Unlike the old system, nothing here is stored or persisted: every value
+   is a pure function of (position, live stat row), recalculated fresh on
+   every render. There's no "locked in" number to maintain, no tiers, and
+   no dirty-checking against Firestore. */
+import { STAT_BASE, DEFAULT_BASE, RATING_K } from './constants.js';
+
+function computeRating(base, rate){
+  const r = rate > 0 ? rate : 0;
+  return Math.round(base + (99 - base) * (r / (r + RATING_K)));
 }
 
-export function defendTier(avgDefPoints){
-  const base = DEFENDING_BASE;
-  if(avgDefPoints >= 4) return { key: 'd4', min: 95, max: 99 };
-  if(avgDefPoints >= 3) return { key: 'd3', min: 90, max: 94 };
-  if(avgDefPoints >= 2) return { key: 'd2', min: 85, max: 89 };
-  if(avgDefPoints >= 1) return { key: 'd1', min: 80, max: 84 };
-  return { key: 'd0', min: base, max: base };
+function basesForPosition(position){
+  return STAT_BASE[position] || DEFAULT_BASE;
 }
 
-function rollInRange(min, max){
-  return min + Math.floor(Math.random() * (max - min + 1));
-}
-
-export function ensurePlayerRatings(player, statRow, force = false){
-  if(!player.ratings) player.ratings = {};
-  let dirty = false;
+/* statRow = the player's row from computePlayerStats() - needs goals,
+   assists, defPoints, matches. Returns the three rounded rating numbers. */
+export function getPlayerRatingValues(player, statRow){
+  const position = player.profile && player.profile.position;
+  const base = basesForPosition(position);
   const matches = statRow ? statRow.matches : 0;
-  const avgGoals = matches ? statRow.goals / matches : 0;
-  const avgAssists = matches ? statRow.assists / matches : 0;
-  const avgDefPoints = matches ? (statRow.defPoints || 0) / matches : 0;
 
-  const tiers = {
-    finishing: attackTier(avgGoals),
-    passing: attackTier(avgAssists),
-    defending: defendTier(avgDefPoints)
-  };
+  const goalRate = matches ? statRow.goals / matches : 0;
+  const assistRate = matches ? statRow.assists / matches : 0;
+  const defRate = matches ? (statRow.defPoints || 0) / matches : 0;
 
-  Object.keys(tiers).forEach(cat => {
-    const tier = tiers[cat];
-    const existing = player.ratings[cat];
-    if(force || !existing || existing.tierKey !== tier.key){
-      player.ratings[cat] = { tierKey: tier.key, value: rollInRange(tier.min, tier.max) };
-      dirty = true;
-    }
-  });
-  return dirty;
-}
-
-export function getPlayerRatingValues(player){
-  const r = player.ratings || {};
   return {
-    finishing: r.finishing ? r.finishing.value : RATING_BASE,
-    passing: r.passing ? r.passing.value : RATING_BASE,
-    defending: r.defending ? r.defending.value : DEFENDING_BASE
+    finishing: computeRating(base.finishing, goalRate),
+    passing: computeRating(base.passing, assistRate),
+    defending: computeRating(base.defending, defRate)
   };
 }
 
-export function computeOverall(player){
-  const vals = getPlayerRatingValues(player);
-  // Simple average of FIN, PAS, DEF for all positions
+export function computeOverall(player, statRow){
+  const vals = getPlayerRatingValues(player, statRow);
   return Math.round((vals.finishing + vals.passing + vals.defending) / 3);
 }
